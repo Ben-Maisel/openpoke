@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from .agent import ExecutionAgent
+from .card import schedule_card_refresh
 from .facts import extract_facts
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
@@ -136,6 +137,7 @@ class ExecutionAgentRuntime:
                 raise RuntimeError("LLM did not return a final response")
 
             self.agent.record_response(final_response)
+            schedule_card_refresh(self.agent.agent_id, instructions, final_response)
 
             return ExecutionResult(
                 agent_name=self.agent.name,

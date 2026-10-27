@@ -103,7 +103,14 @@ Each step builds on the previous ones. Related problems that touch the same code
       - failed calls, lookups and unknown tools record nothing
     - **Composio's draft-ID field isn't confirmed,** so the common placements are all accepted.
     - **Tests:** `tests/test_agent_facts.py`, 17 tests, including real runs that update the card.
-  - [ ] P1d: refresh the card summary after each run
+  - [x] **P1d: card summary refreshed after each run.**
+    - **What:** `server/agents/execution_agent/card.py`. After every successful run, the execution runtime schedules a background call that rewrites the card from the previous card, the latest request and the agent's report. It's one short call on the summarizer model setting (Haiku), with a strict two-sentence prompt (topic, state, open items).
+    - **Doesn't delay anything:** the call runs in the background, so the agent's report is never held up.
+    - **Safe on failure:** an empty or failed refresh keeps the old card and logs a warning.
+    - **Bounded:** text is tidied and capped at 300 characters. Failed runs don't refresh.
+    - **Test support:** the fake LLM gained `default()` responses so card calls don't need scripting in every test.
+    - **Tests:** `tests/test_agent_card.py`, 8 tests, including a gated card call proving the report returns before the refresh completes.
+    - **Live:** a rent-reminder agent's card refreshed about 1.5 s after its run to "…Active as trigger ID 1, firing 9:00 AM Pacific on the 1st of every month, next on November 1, 2026…".
   - [ ] P1e: one-time import of existing roster and memory files
 - **Solution:** —
 

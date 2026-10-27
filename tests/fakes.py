@@ -17,6 +17,7 @@ LLM_CALL_SITES = [
     "server.agents.execution_agent.tasks.search_email.tool",
     "server.services.conversation.summarization.summarizer",
     "server.services.gmail.importance_classifier",
+    "server.agents.execution_agent.card",
     "evals.routing.harness",
 ]
 
@@ -77,6 +78,10 @@ def is_search_task(call: LLMCall) -> bool:
     return "return_search_results" in call.tool_names
 
 
+def is_card_refresh(call: LLMCall) -> bool:
+    return "status card for one background worker" in (call.system or "")
+
+
 def is_agent(name: str) -> Matcher:
     """Matches calls made by one specific execution agent."""
     return lambda call: is_execution_agent(call) and f"Agent Name: {name}\n" in (call.system or "")
@@ -118,9 +123,15 @@ class ScriptedLLM:
 
     calls: List[LLMCall] = field(default_factory=list)
     _queues: List[Tuple[Matcher, Deque[Any]]] = field(default_factory=list)
+    _defaults: List[Tuple[Matcher, Any]] = field(default_factory=list)
 
     def script(self, *responses: Any, when: Matcher = lambda call: True) -> "ScriptedLLM":
         self._queues.append((when, deque(responses)))
+        return self
+
+    def default(self, response: Any, when: Matcher) -> "ScriptedLLM":
+        """Answer every matching call with `response` once its scripted queue (if any) is used up."""
+        self._defaults.append((when, response))
         return self
 
     def for_interaction(self, *responses: Any) -> "ScriptedLLM":
@@ -152,6 +163,9 @@ class ScriptedLLM:
                 if isinstance(response, Exception):
                     raise response
                 return response
+        for matcher, response in self._defaults:
+            if matcher(call):
+                return copy.deepcopy(response)
         raise AssertionError(f"ScriptedLLM: no scripted response left for this call (tools={call.tool_names})")
 
 

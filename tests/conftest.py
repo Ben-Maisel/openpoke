@@ -25,13 +25,17 @@ import importlib  # noqa: E402  (must come after the environment setup above)
 
 import pytest  # noqa: E402
 
-from fakes import GMAIL_CALL_SITES, LLM_CALL_SITES, FakeGmail, ScriptedLLM  # noqa: E402
+from fakes import GMAIL_CALL_SITES, LLM_CALL_SITES, FakeGmail, ScriptedLLM, is_card_refresh, reply  # noqa: E402
 
 
 @pytest.fixture
 def fake_llm(monkeypatch):
-    """Route every LLM call in the server to a ScriptedLLM for this test."""
+    """Route every LLM call in the server to a ScriptedLLM for this test.
+
+    Card refreshes run after every agent run, so they get a canned answer unless a test scripts them.
+    """
     llm = ScriptedLLM()
+    llm.default(reply("Fake card summary."), when=is_card_refresh)
     for module_path in LLM_CALL_SITES:
         monkeypatch.setattr(importlib.import_module(module_path), "request_chat_completion", llm)
     return llm
