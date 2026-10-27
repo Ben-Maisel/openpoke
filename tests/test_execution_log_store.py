@@ -46,7 +46,6 @@ def test_multiline_and_markup_payloads_round_trip(store):
     assert stored == payload
 
 
-@pytest.mark.xfail(strict=True, reason="P24: literal backslash-n is decoded as a newline")
 def test_literal_backslash_n_round_trips(store):
     payload = r"attachment saved to C:\new\notes.txt"
     store.record_tool_response("a", "gmail_fetch", payload)

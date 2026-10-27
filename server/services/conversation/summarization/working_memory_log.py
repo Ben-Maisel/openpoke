@@ -4,27 +4,19 @@ import json
 import re
 import threading
 from datetime import datetime
-from html import escape, unescape
+from html import escape
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ....config import DATA_DIR
 from ....logging_config import logger
+from ....utils.log_encoding import decode_payload as _decode_payload, encode_payload as _encode_payload
 from ....utils.timezones import now_in_user_timezone
 from .state import LogEntry, SummaryState
 
 
 _WORKING_MEMORY_LOG_PATH = DATA_DIR / "conversation" / "poke_working_memory.log"
 
-
-def _encode_payload(payload: str) -> str:
-    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-    collapsed = normalized.replace("\n", "\\n")
-    return escape(collapsed, quote=False)
-
-
-def _decode_payload(payload: str) -> str:
-    return unescape(payload).replace("\\n", "\n")
 
 
 def _format_line(tag: str, payload: str, timestamp: Optional[str] = None) -> str:

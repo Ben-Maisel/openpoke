@@ -63,7 +63,6 @@ def test_payload_round_trips(conversation, payload):
     assert stored == payload.replace("\r\n", "\n")
 
 
-@pytest.mark.xfail(strict=True, reason="P24: literal backslash-n is decoded as a newline")
 def test_literal_backslash_n_round_trips(conversation):
     payload = r"saved to C:\new\notes.txt"
     conversation.record_user_message(payload)

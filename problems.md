@@ -64,7 +64,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🟢 Solved |
-| P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
+| P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🟢 Solved |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
 | P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
 | P27 | The interaction agent can "edit" a draft itself, so what the user approves isn't what Gmail sends | D | High | 🔴 Open |
@@ -309,7 +309,10 @@ Each step builds on the previous ones. Related problems that touch the same code
   - [server/services/execution/log_store.py](server/services/execution/log_store.py)
 - **What:** each entry is stored on one line by replacing real newlines with the two characters `\n`. Existing backslashes aren't escaped first, so on read-back *any* literal `\n` in the original text becomes a newline. For example, `C:\new\notes.txt` becomes `C:` + newline + `ew` + newline + `otes.txt`. This silently alters Windows paths, code, and regexes in user messages, emails, and agent memory.
 - **Found by:** `test_literal_backslash_n_round_trips` in `tests/test_conversation_log.py` and `tests/test_execution_log_store.py` (expected failures until fixed).
-- **Solution:** —
+- **Solution:** a single shared encoder, `server/utils/log_encoding.py`, replaces the three copies. It escapes backslashes before newlines (`\` → `\\`, newline → `\n`) and decodes only those two escapes, so any text round-trips exactly. Decoding leaves every other backslash untouched, so lines written by the old encoder still read back as they did before.
+  - **Verified:**
+    - both P24 tests pass, with their expected-failure markers removed
+    - `tests/test_log_encoding.py`: exact round trips across tricky inputs (Windows paths, regexes, trailing backslashes, markup, unicode); every encoded line is a single line with no markup; old-format lines still decode correctly
 
 ### P25: Email body extraction misses common formats
 - **Where:** [server/services/gmail/processing.py:191-224](server/services/gmail/processing.py#L191-L224) (`_extract_html_body`, `_extract_plain_body`, `post_process_text`)

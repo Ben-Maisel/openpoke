@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import re
 import threading
-from html import escape, unescape
+from html import escape
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Protocol, Tuple
 
 from ...config import DATA_DIR, get_settings
 from ...logging_config import logger
 from ...models import ChatMessage
+from ...utils.log_encoding import decode_payload as _decode_payload, encode_payload as _encode_payload
 from ...utils.timezones import now_in_user_timezone
 from typing import TYPE_CHECKING
 
@@ -23,15 +24,6 @@ class TranscriptFormatter(Protocol):
     def __call__(self, tag: str, timestamp: str, payload: str) -> str:  # pragma: no cover - typing protocol
         ...
 
-
-def _encode_payload(payload: str) -> str:
-    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
-    collapsed = normalized.replace("\n", "\\n")
-    return escape(collapsed, quote=False)
-
-
-def _decode_payload(payload: str) -> str:
-    return unescape(payload).replace("\\n", "\n")
 
 
 def _default_formatter(tag: str, timestamp: str, payload: str) -> str:
