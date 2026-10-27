@@ -155,6 +155,24 @@ def test_smoke_selection_takes_two_cases_per_category():
 
 # --- Report ---------------------------------------------------------------------------
 
+def test_report_separates_precision_from_reach_when_the_model_fans_out(tmp_path):
+    meta = {"label": "t", "identity": {"model": "m", "seed": 1, "dataset_sha": "d", "app_prompt_sha": "p"}}
+    (tmp_path / "meta.json").write_text(json.dumps(meta))
+    base = {"category": "explicit_followup", "roster_size": 50, "repeat": 0, "near_miss": False,
+            "prompt_tokens": 100, "completion_tokens": 5, "cost": 0.0, "error": None,
+            "expect": {"kind": "agent", "agents": ["Real"]}}
+    rows = [
+        {**base, "case_id": "exact", "routes": ["Real"], "outcome": "correct"},
+        {**base, "case_id": "hedged", "routes": ["Decoy", "Real", "Other"], "outcome": "wrong_agent"},
+        {**base, "case_id": "missed", "routes": ["Decoy"], "outcome": "wrong_agent"},
+        {**base, "case_id": "new", "routes": ["new:x"], "outcome": "correct", "expect": {"kind": "new", "agents": []}},
+    ]
+    (tmp_path / "decisions.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    text = write_report(tmp_path).read_text(encoding="utf-8")
+    # 3 cases with a right agent: 1 exact, 2 reached it, 5 agents messaged across 3 decisions.
+    assert "| 50 | 33% | 67% | 1.67 |" in text
+
+
 def test_report_is_rebuilt_from_the_log_alone(responder, tmp_path):
     run([CASES["explicit-vercel-offer"], CASES["explicit-dentist-when"], CASES["none-thanks"]], tmp_path)
     calls_before = responder.calls

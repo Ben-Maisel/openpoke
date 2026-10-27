@@ -59,6 +59,22 @@ def write_report(out_dir: Path) -> Path:
     for size, s in by_size.items():
         lines.append(f"| {size} | " + " | ".join(str(s.outcomes[o.value]) for o in _OUTCOME_ORDER) + f" | {s.near_misses} |")
 
+    # Exact accuracy hides a trade-off when the model hedges by messaging several look-alike agents:
+    # it reaches the right one more often, at the cost of extra runs (and risk, for actions).
+    lines += ["", "## Precision vs reach (cases with a correct existing agent)", "",
+              "| Agents | Only the right agent | Reached the right agent | Mean agents messaged |",
+              "|---:|---:|---:|---:|"]
+    for size in by_size:
+        agent_cases = [r for r in records if r["roster_size"] == size and r["expect"]["kind"] == "agent"
+                       and r["outcome"] != Outcome.ERROR.value]
+        if not agent_cases:
+            continue
+        exact = sum(r["outcome"] == Outcome.CORRECT.value for r in agent_cases) / len(agent_cases)
+        reached = sum(bool(set(r["expect"]["agents"]) & set(r["routes"])) for r in agent_cases) / len(agent_cases)
+        delegated = [len(r["routes"]) for r in agent_cases if r["routes"]]
+        fan = sum(delegated) / len(delegated) if delegated else 0.0
+        lines.append(f"| {size} | {_pct(exact)} | {_pct(reached)} | {fan:.2f} |")
+
     sizes = list(by_size)
     categories = sorted({c for c, _ in by_category_size})
     lines += ["", "## Accuracy by case category", "",

@@ -3,7 +3,7 @@
 - **Model:** `anthropic/claude-haiku-5.5` · **seed** 20261026 · **dataset** `9b67db241db260ce` · **app prompt** `44a60bb84fac425a`
 - **Roster variant:** messy (two duplicate decoy agents per case; see `evals/routing/data/decoys.json`)
 - **Code:** `06bab63261`
-- **Decisions:** 160 · **total cost:** $0.1784
+- **Decisions:** 160 · **total cost:** $0.1784 · **duplicate warnings shown:** 0
 
 ## Accuracy by roster size
 
@@ -22,6 +22,15 @@
 | 50 | 13 | 0 | 0 | 0 | 0 | 0 | 0 |
 | 200 | 13 | 0 | 0 | 0 | 0 | 0 | 0 |
 | 500 | 13 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+## Precision vs reach (cases with a correct existing agent)
+
+| Agents | Only the right agent | Reached the right agent | Mean agents messaged |
+|---:|---:|---:|---:|
+| 10 | 42% | 58% | 1.29 |
+| 50 | 46% | 67% | 1.33 |
+| 200 | 46% | 71% | 1.29 |
+| 500 | 46% | 58% | 1.17 |
 
 ## Accuracy by case category
 

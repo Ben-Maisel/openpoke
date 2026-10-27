@@ -1,8 +1,9 @@
 # Routing eval: `baseline`
 
 - **Model:** `anthropic/claude-haiku-5.5` · **seed** 20261026 · **dataset** `9b67db241db260ce` · **app prompt** `44a60bb84fac425a`
+- **Roster variant:** clean
 - **Code:** `486c12033a`
-- **Decisions:** 160 · **total cost:** $0.1654
+- **Decisions:** 160 · **total cost:** $0.1654 · **duplicate warnings shown:** 0
 
 ## Accuracy by roster size
 
@@ -21,6 +22,15 @@
 | 50 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | 200 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | 500 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
+
+## Precision vs reach (cases with a correct existing agent)
+
+| Agents | Only the right agent | Reached the right agent | Mean agents messaged |
+|---:|---:|---:|---:|
+| 10 | 100% | 100% | 1.00 |
+| 50 | 100% | 100% | 1.00 |
+| 200 | 100% | 100% | 1.00 |
+| 500 | 96% | 96% | 1.00 |
 
 ## Accuracy by case category
 

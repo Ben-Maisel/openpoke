@@ -44,7 +44,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🔴 Open |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
-| P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟡 In progress |
+| P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🔴 Open |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
@@ -158,6 +158,13 @@ Each step builds on the previous ones. Related problems that touch the same code
   - **Verified:**
     - 646 tests pass, with new tests for create, send-by-ID, unknown IDs, duplicate hold-back, `confirm_new`, and genuinely new tasks
     - live on Haiku: "remind me to call mom…" → `create_agent` (a1); "make the mom call reminder 7pm" → `send_message_to_agent("a1")`, one agent and two runs
+- **P4c, evals rerun** (`evals/results/p4`, `evals/results/p4-messy`; Haiku 5.5, 320 decisions, about $0.36):
+  - **Clean roster:** accuracy is unchanged (98–100%). Prompt size rose about 20% (5.1k → 6.1k tokens at 10 agents, 14.4k → 17.6k at 500) from IDs in the roster and the longer tool and prompt text. P2's shortlist is what cuts this.
+  - **Messy roster:** exact accuracy fell from 62–68% to 57–60%, but **the model reached the right agent far more often (58–71% → 71–96%)**. With IDs, when it can't tell look-alikes apart, it hedges by messaging all of them (1.3 → 1.9 agents per decision). The reports now include a "precision vs reach" table, regenerated for every run from the logged decisions with no new API calls.
+  - **Duplicate warnings shown: 0.** The model never tried to create a duplicate in these cases, and no genuinely new task was falsely flagged.
+  - **Reading:** P4 fixes the *structural* problem (no silent duplicate creation, no shared memory), but it gives the model no new *information* for telling existing look-alikes apart. That's what cards in the P2 shortlist add. The fan-out is a reasonable hedge for questions but costly, and risky for actions, so P2 should be judged on both precision and reach.
+  - **Caveat:** these evals start with duplicates already in the roster, so they can't measure how many duplicates `create_agent` prevents from forming. That benefit shows up over many turns of real use.
+- **Solution:** routing by stable ID with an explicit, duplicate-checked `create_agent` (P4a–b, above). A near-miss can no longer silently create an agent or share another's memory.
 - **Progress:** the *shared memory* half is fixed by P1b. Memory is keyed by agent ID, so two agents can never share a file, whatever their names (`test_agents_whose_names_collide_never_share_memory`). The *duplicate creation* half (a near-miss name silently creates a new agent) remains, for ID-based routing and the duplicate check.
 - **Solution:** —
 
