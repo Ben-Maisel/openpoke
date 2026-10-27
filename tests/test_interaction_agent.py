@@ -177,7 +177,7 @@ def send(agent_id, instructions):
     return calls(("send_message_to_agent", {"agent_id": agent_id, "instructions": instructions}))
 
 
-async def test_creating_registers_the_agent_logs_the_request_and_dispatches_by_id(fake_llm, dispatcher):
+async def test_creating_registers_the_agent_and_dispatches_by_id(fake_llm, dispatcher):
     fake_llm.for_interaction(create("Lunch with Alice", "Draft an invite"), reply(""))
     await InteractionAgentRuntime().execute("invite alice to lunch")
     await asyncio.sleep(0)  # let the background dispatch run
@@ -185,7 +185,8 @@ async def test_creating_registers_the_agent_logs_the_request_and_dispatches_by_i
     (agent,) = get_agent_registry().list_agents()
     assert agent.name == "Lunch with Alice"
     assert agent.summary == "Draft an invite"  # the card starts as the creating instructions
-    assert [p for _, _, p in get_execution_agent_logs().iter_entries(agent.id)] == ["Draft an invite"]
+    # The request is journaled when the run starts (P10), not at dispatch.
+    assert list(get_execution_agent_logs().iter_entries(agent.id)) == []
     assert dispatcher.dispatched == [(agent.id, "Draft an invite")]
     result = json.loads(tool_results(fake_llm.calls[1])[0])["result"]
     assert (result["agent_id"], result["new_agent_created"]) == (agent.id, True)
@@ -288,18 +289,30 @@ async def test_malformed_llm_response_returns_failure(fake_llm):
     assert result.success is False
 
 
-@pytest.mark.xfail(strict=True, reason="P12: when the interaction agent fails, the user is told nothing")
 async def test_user_is_told_when_the_assistant_fails(fake_llm):
     fake_llm.for_interaction(OpenRouterError("503 upstream unavailable"))
-    await InteractionAgentRuntime().execute("hi")
-    assert chat()[-1][0] == "assistant"
+    result = await InteractionAgentRuntime().execute("hi")
+    assert result.success is False
+    assert chat() == [("user", "hi"), ("assistant", runtime_module.USER_TURN_FAILED)]
 
 
-@pytest.mark.xfail(strict=True, reason="P12: hitting the iteration limit leaves the user with no reply")
 async def test_user_is_told_when_the_iteration_limit_is_hit(fake_llm):
     fake_llm.for_interaction(*[calls(("wait", {"reason": "loop"}))] * InteractionAgentRuntime.MAX_TOOL_ITERATIONS)
     await InteractionAgentRuntime().execute("hi")
-    assert chat()[-1][0] == "assistant"
+    assert chat() == [("user", "hi"), ("assistant", runtime_module.USER_TURN_FAILED)]
+
+
+async def test_user_is_told_when_an_agent_report_cannot_be_relayed(fake_llm):
+    fake_llm.for_interaction(OpenRouterError("503 upstream unavailable"))
+    result = await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch (a1): done")
+    assert result.success is False
+    assert chat() == [("assistant", runtime_module.AGENT_TURN_FAILED)]
+
+
+async def test_a_failure_after_an_acknowledgement_still_says_so(fake_llm):
+    fake_llm.for_interaction(calls(("send_message_to_user", {"message": "on it"})), OpenRouterError("503"))
+    await InteractionAgentRuntime().execute("hi")
+    assert chat() == [("user", "hi"), ("assistant", "on it"), ("assistant", runtime_module.USER_TURN_FAILED)]
 
 
 def test_missing_api_key_is_rejected_up_front(monkeypatch):

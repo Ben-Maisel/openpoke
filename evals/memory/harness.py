@@ -144,7 +144,7 @@ def prepare_worker(name: str, runs: Sequence[Run], card: str, question: str) -> 
                             registry.remove_fact(agent.id, kind, value)
             logs.record_agent_response(agent.id, run.response)
         set_time(run_times(len(runs) + 1)[-1])
-        logs.record_request(agent.id, question)  # the app records the request when it dispatches
+        logs.record_request(agent.id, question)  # the app records the request when the run starts
     return agent.id
 
 

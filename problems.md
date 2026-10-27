@@ -50,9 +50,9 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
 | P9 | One global result batch: fast tasks wait for unrelated slow ones | D | High | 🔴 Open |
-| P10 | The same execution agent can run twice concurrently | D | Medium | 🔴 Open |
+| P10 | The same execution agent can run twice concurrently | D | Medium | 🟢 Solved |
 | P11 | Interaction-agent turns from four sources run concurrently and race | D | Medium | 🔴 Open |
-| P12 | Failures are silent; the user gets no reply | D | Medium | 🔴 Open |
+| P12 | Failures are silent; the user gets no reply | D | Medium | 🟢 Solved |
 | P13 | No tests or evaluations exist | E | High | 🟢 Solved |
 | P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🟢 Solved |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
@@ -308,7 +308,12 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P10: The same agent can run concurrently
 - **Where:** [server/agents/interaction_agent/tools.py](server/agents/interaction_agent/tools.py)
 - **What:** two messages to the same agent start two runs that read the same memory snapshot. Neither sees the other's actions, and their log writes interleave.
-- **Solution:** —
+- **Solution:**
+  - **One run at a time per agent.** The batch manager keeps a lock per agent ID, so a second run waits for the first and then starts from its memory. Different agents still run in parallel.
+  - **The request is recorded when the run starts,** not at dispatch, so each request sits next to its own result in the journal. Trigger-fired runs now get a request entry too.
+  - **Verified:**
+    - the strict expected failure passes: the second run's prompt contains the first run's result, and the journal reads request 1 → response 1 → request 2 → response 2
+    - a new test confirms that two different agents still run at the same time
 
 ### P11: Interaction-agent turns race
 - **Where:** [server/agents/interaction_agent/runtime.py](server/agents/interaction_agent/runtime.py)
@@ -318,7 +323,14 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P12: Silent failures
 - **Where:** [server/agents/interaction_agent/runtime.py:186](server/agents/interaction_agent/runtime.py#L186), [server/services/conversation/chat_handler.py:47](server/services/conversation/chat_handler.py#L47)
 - **What:** the HTTP request returns `202` immediately. If the interaction agent errors or hits its 8-round limit, nothing is written to the chat, and the UI stops waiting after 30 seconds.
-- **Solution:** —
+- **Solution:**
+  - **A failed turn now always leaves a short apology in the chat.** This covers an API error, the round limit, or anything else.
+    - A failed reply to your message says to try again.
+    - A failed relay of a background task's report says to ask about it, so the result isn't silently lost.
+  - **Details go to the server log,** not the user.
+  - **Verified:**
+    - both strict expected failures (an API error, and the round limit) now pass with the exact message
+    - new tests cover a failed agent-report turn, and a failure after an "on it" acknowledgement
 
 ## E. Quality, cost and operations
 

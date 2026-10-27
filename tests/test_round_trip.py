@@ -12,7 +12,7 @@ import pytest
 from fakes import Gated, calls, is_agent, is_interaction_agent, reply, wait_until
 from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_registry, get_conversation_log, get_draft_store
+from server.services import get_agent_registry, get_conversation_log, get_draft_store, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state", "batch_manager")
 
@@ -167,7 +167,6 @@ async def test_fast_result_is_not_held_back_by_an_unrelated_slow_task(fake_llm, 
         await wait_until(lambda: batch_manager._batch_state is None)
 
 
-@pytest.mark.xfail(strict=True, reason="P10: two runs of the same agent execute concurrently on the same memory")
 async def test_second_message_to_a_busy_agent_sees_the_first_runs_result(fake_llm, fake_gmail, batch_manager):
     first = Gated(reply("Draft r-1 created"))
     fake_llm.script(first, reply("Sent r-1"), when=is_agent(AGENT))
@@ -183,6 +182,10 @@ async def test_second_message_to_a_busy_agent_sees_the_first_runs_result(fake_ll
 
     second_run_prompt = fake_llm.calls_to(is_agent(AGENT))[1].system
     assert "Draft r-1 created" in second_run_prompt
+    # Each request sits next to its own result in the journal; the second was only recorded once its run began.
+    journal = [(tag, payload) for tag, _, payload in get_execution_agent_logs().iter_entries(agent.id)]
+    assert journal == [("agent_request", "Draft the invite"), ("agent_response", "Draft r-1 created"),
+                       ("agent_request", "Send it"), ("agent_response", "Sent r-1")]
 
 
 @pytest.mark.xfail(strict=True, reason="P11: interaction-agent turns run concurrently and read stale history")
@@ -200,3 +203,17 @@ async def test_agent_report_turn_sees_the_reply_from_a_turn_already_in_progress(
 
     report_prompt = fake_llm.calls_to(agent_turn)[0].prompt
     assert "hello!" in report_prompt
+
+
+async def test_different_agents_still_run_at_the_same_time(fake_llm, fake_gmail, batch_manager):
+    alice, bob = Gated(reply("Alice done")), Gated(reply("Bob done"))
+    fake_llm.script(alice, when=is_agent("Alice"))
+    fake_llm.script(bob, when=is_agent("Bob"))
+    fake_llm.script(reply(""), reply(""), when=agent_turn)
+
+    runs = [asyncio.create_task(batch_manager.execute_agent(get_agent_registry().create(name).id, "go"))
+            for name in ("Alice", "Bob")]
+    await wait_until(lambda: alice.reached.is_set() and bob.reached.is_set())  # both started before either finished
+    alice.release()
+    bob.release()
+    await asyncio.wait_for(asyncio.gather(*runs), timeout=2)

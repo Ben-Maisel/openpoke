@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
-from ...services.execution import AgentRecord, get_agent_registry, get_draft_store, get_execution_agent_logs
+from ...services.execution import AgentRecord, get_agent_registry, get_draft_store
 from ...services.execution.matching import DuplicateCandidate, find_possible_duplicates
 from ...services.execution.search import search_agents as rank_agents
 from ..execution_agent.batch_manager import ExecutionBatchManager
@@ -245,8 +245,6 @@ def _dispatch(agent: AgentRecord, instructions: str, *, new_agent_created: bool)
     if loop is None:
         logger.error("No running event loop available for async execution")
         return ToolResult(success=False, payload={"error": "No event loop available"})
-
-    get_execution_agent_logs().record_request(agent.id, instructions)
 
     async def _execute_async() -> None:
         try:

@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 from .runtime import ExecutionAgentRuntime, ExecutionResult
 from ...logging_config import logger
-from ...services.execution import get_agent_registry
+from ...services.execution import get_agent_registry, get_execution_agent_logs
 
 
 # The agent's name for reports, falling back to its ID if the agent no longer exists
@@ -49,6 +49,7 @@ class ExecutionBatchManager:
         self._pending: Dict[str, PendingExecution] = {}
         self._batch_lock = asyncio.Lock()
         self._batch_state: Optional[_BatchState] = None
+        self._agent_locks: Dict[str, asyncio.Lock] = {}  # one run at a time per agent (P10)
 
     # Run execution agent with timeout handling and batch coordination for interaction agent
     async def execute_agent(
@@ -65,12 +66,16 @@ class ExecutionBatchManager:
         batch_id = await self._register_pending_execution(agent_id, instructions, request_id)
 
         try:
-            logger.info(f"[{agent_id}] Execution started")
-            runtime = ExecutionAgentRuntime(agent_id=agent_id)
-            result = await asyncio.wait_for(
-                runtime.execute(instructions),
-                timeout=self.timeout_seconds,
-            )
+            # Runs of the same agent wait their turn, so each one starts from the previous run's memory.
+            # The request is journaled once the run starts, keeping each request next to its own result.
+            async with self._agent_locks.setdefault(agent_id, asyncio.Lock()):
+                logger.info(f"[{agent_id}] Execution started")
+                get_execution_agent_logs().record_request(agent_id, instructions)
+                runtime = ExecutionAgentRuntime(agent_id=agent_id)
+                result = await asyncio.wait_for(
+                    runtime.execute(instructions),
+                    timeout=self.timeout_seconds,
+                )
             status = "SUCCESS" if result.success else "FAILED"
             logger.info(f"[{agent_id}] Execution finished: {status}")
         except asyncio.TimeoutError:

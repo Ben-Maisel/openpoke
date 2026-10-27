@@ -12,6 +12,10 @@ from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
 
 
+USER_TURN_FAILED = "Sorry, something went wrong on my end and I couldn't finish that. Please try again."
+AGENT_TURN_FAILED = "Sorry, one of my background tasks finished but I hit a problem passing on the result. Ask me about it and I'll check."
+
+
 @dataclass
 class InteractionResult:
     """Result from the interaction agent."""
@@ -90,6 +94,7 @@ class InteractionAgentRuntime:
 
         except Exception as exc:
             logger.error("Interaction agent failed", extra={"error": str(exc)})
+            self._tell_user_about_failure(USER_TURN_FAILED)
             return InteractionResult(
                 success=False,
                 response="",
@@ -125,11 +130,19 @@ class InteractionAgentRuntime:
 
         except Exception as exc:
             logger.error("Interaction agent (agent message) failed", extra={"error": str(exc)})
+            self._tell_user_about_failure(AGENT_TURN_FAILED)
             return InteractionResult(
                 success=False,
                 response="",
                 error=str(exc),
             )
+
+    # A failed turn must never be silent (P12): the chat gets a short apology instead of nothing
+    def _tell_user_about_failure(self, message: str) -> None:
+        try:
+            self.conversation_log.record_reply(message)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Could not record the failure notice", extra={"error": str(exc)})
 
     # Core interaction loop that handles LLM calls and tool executions until completion
     async def _run_interaction_loop(
