@@ -170,7 +170,7 @@ Each step builds on the previous ones. Related problems that touch the same code
     - [x] **Triggers.** `tests/test_trigger_{utils,service,scheduler}.py`, 62 tests, using a real temporary SQLite file, a frozen clock, and a fake execution agent. These found P21–P23, which are tracked as strict expected failures.
     - [x] **Logs and memory.** `tests/test_conversation_log.py`, `tests/test_summarizer.py` and `tests/test_execution_log_store.py`, 42 tests, with the summarizer LLM faked. These found P24 and confirmed P4's shared-memory collision; both are tracked as strict expected failures.
     - [x] **Email processing.** `tests/test_email_processing.py`, 37 tests on realistic Gmail API payloads. These found P25, tracked as strict expected failures.
-    - [ ] Timezones and small stores
+    - [x] **Timezones and small stores.** `tests/test_timezones.py` and `tests/test_seen_store.py`, 30 tests covering the timezone store, the timezone helpers, the `/meta/timezone` API route, and the seen-email store. No bugs found.
   - [ ] Fake LLM and fake Gmail fixtures, plus component tests
   - [ ] Baseline routing eval (before P1)
 - **Solution:** —
