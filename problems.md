@@ -171,7 +171,14 @@ Each step builds on the previous ones. Related problems that touch the same code
     - [x] **Logs and memory.** `tests/test_conversation_log.py`, `tests/test_summarizer.py` and `tests/test_execution_log_store.py`, 42 tests, with the summarizer LLM faked. These found P24 and confirmed P4's shared-memory collision; both are tracked as strict expected failures.
     - [x] **Email processing.** `tests/test_email_processing.py`, 37 tests on realistic Gmail API payloads. These found P25, tracked as strict expected failures.
     - [x] **Timezones and small stores.** `tests/test_timezones.py` and `tests/test_seen_store.py`, 30 tests covering the timezone store, the timezone helpers, the `/meta/timezone` API route, and the seen-email store. No bugs found.
-  - [ ] Fake LLM and fake Gmail fixtures, plus component tests
+  - Component tests:
+    - [x] **4a: interaction agent.**
+      - `tests/fakes.py` provides `ScriptedLLM`, which replaces all 5 LLM call sites, queues scripted responses for each agent type, and records every prompt.
+      - `conftest.py` adds the `fake_llm` and `clean_state` fixtures.
+      - `tests/test_interaction_agent.py`, 29 tests: replies, the prompt's contents, delegation and reuse, malformed tool calls, the iteration limit, LLM outages, drafts, and the chat HTTP API end to end.
+      - Confirms P2 (full roster in every prompt), P12 (failures are silent), and P16 (drafts not marked as drafts).
+    - [ ] 4b: execution agent loop, Gmail tools against a fake inbox, trigger tools
+    - [ ] 4c: batch manager and full round trip; P9 and P10 concurrency
   - [ ] Baseline routing eval (before P1)
 - **Solution:** —
 
