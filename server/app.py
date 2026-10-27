@@ -18,6 +18,7 @@ from .services import (
     get_trigger_service,
 )
 from .services.execution.migration import migrate_legacy_roster
+from .services.notifications import get_notification_center
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -85,6 +86,7 @@ async def _start_trigger_scheduler() -> None:
     await scheduler.start()
     watcher = get_important_email_watcher()
     await watcher.start()
+    await get_notification_center().start()
 
 
 @app.on_event("shutdown")
@@ -94,6 +96,7 @@ async def _stop_trigger_scheduler() -> None:
     await scheduler.stop()
     watcher = get_important_email_watcher()
     await watcher.stop()
+    await get_notification_center().stop()
 
 
 __all__ = ["app"]

@@ -47,7 +47,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟢 Solved |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
-| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
+| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🟡 Lanes done; email urgency and evaluation next |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
 | P9 | One global result batch: fast tasks wait for unrelated slow ones | D | High | 🔴 Open |
 | P10 | The same execution agent can run twice concurrently | D | Medium | 🟢 Solved |
@@ -309,7 +309,24 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/gmail/importance_watcher.py:200-207](server/services/gmail/importance_watcher.py#L200-L207), [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py)
 - **What:** each important email triggers its own interaction-agent turn and user message. Each trigger firing also messages the user, even when there's nothing new to say. There is no batching, digest, priority, or quiet hours.
 - **Why it matters:** this is the user-facing side of agent overload; more agents mean more interruptions.
-- **Solution:** —
+- **Solution (in progress):** notification lanes, decided in code ([notifications.py](server/services/notifications.py)).
+  - **Three lanes for everything the user didn't just ask for:**
+    - **now:** delivered at once, as its own message
+    - **digest:** held, then delivered together as **one** message (one interaction turn) once the oldest update has waited `digest_interval_minutes` (default 60), and never during `quiet_hours` (default 22:00–07:00, local time)
+    - **silent:** recorded but never sent
+
+    All the settings live in `server/config.py`. Updates are stored in SQLite, so a held digest survives a restart.
+  - **Triggers have a `notify` mode, set by the worker when it creates one:**
+    - `always` is for a reminder and goes to **now**. It's the default, so existing triggers behave as before.
+    - `on_change` is for a background check such as "check hourly whether Alice replied". Its run is told to reply `NO_UPDATE` when nothing changed. That reply goes **silent**; anything else goes to the **digest**, and so does a failed check.
+    - Trigger results now leave the batch path (`execute_agent(..., report=False)`) and go through the lanes. They still wait their turn behind the agent's other runs.
+    - The store migrates older trigger databases.
+  - **The interaction agent** is told to sum up a digest in one short message.
+  - **Verified:**
+    - scheduler tests cover each lane, `NO_UPDATE` going silent, a failed check still reported, and only background checks being told about `NO_UPDATE`
+    - center tests cover immediate delivery, digest timing, 12 updates becoming one message, nothing sent twice, quiet hours holding the digest while **now** still delivers, the end of quiet hours, force-flush, turning quiet hours off, the background loop, and quiet-hours parsing (including windows that wrap past midnight)
+    - trigger tests cover defaults, validation, updates, the worker tool, and migration
+  - **Next:** emails get an urgency (urgent → now, otherwise → digest), then a "day in the life" measurement and a small urgency eval.
 
 ## D. Reliability
 

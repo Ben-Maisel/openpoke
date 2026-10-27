@@ -20,9 +20,11 @@ class FakeBatchManager:
 
     calls: list = []
     outcome: object = "success"  # "success", "failure", or an Exception to raise
+    response: str = "done"
     gate: asyncio.Event | None = None
 
-    async def execute_agent(self, agent_id, instructions, request_id=None):
+    async def execute_agent(self, agent_id, instructions, request_id=None, *, report=True):
+        assert report is False  # trigger results go through the notification lanes, not the batch (P7)
         FakeBatchManager.calls.append((agent_id, instructions))
         if FakeBatchManager.gate is not None:
             await FakeBatchManager.gate.wait()
@@ -31,7 +33,7 @@ class FakeBatchManager:
         success = FakeBatchManager.outcome == "success"
         return ExecutionResult(
             agent_name=agent_id, agent_id=agent_id, success=success,
-            response="done" if success else "boom", error=None if success else "boom",
+            response=FakeBatchManager.response if success else "boom", error=None if success else "boom",
         )
 
 
@@ -41,11 +43,26 @@ def service(tmp_path, monkeypatch):
     return TriggerService(TriggerStore(tmp_path / "triggers.db"))
 
 
+class RecordingCenter:
+    def __init__(self):
+        self.sent = []
+
+    async def notify(self, text, *, lane, source):
+        self.sent.append((lane, source, text))
+
+
 @pytest.fixture
-def scheduler(service, monkeypatch):
+def notifications():
+    return RecordingCenter()
+
+
+@pytest.fixture
+def scheduler(service, monkeypatch, notifications):
     FakeBatchManager.calls = []
     FakeBatchManager.outcome = "success"
     FakeBatchManager.gate = None
+    FakeBatchManager.response = "done"
+    monkeypatch.setattr(scheduler_module, "get_notification_center", lambda: notifications)
     monkeypatch.setattr(scheduler_module, "get_execution_batch_manager", FakeBatchManager)
     monkeypatch.setattr(scheduler_module, "get_trigger_service", lambda: service)
     monkeypatch.setattr(scheduler_module, "_utc_now", lambda: FIXED_NOW)
@@ -174,3 +191,40 @@ async def test_start_and_stop_are_idempotent(scheduler):
     await scheduler.stop()
     await scheduler.stop()
     assert scheduler._task is None
+
+
+# --- notification lanes (P7) ------------------------------------------------
+
+async def test_a_reminder_reaches_the_user_now(scheduler, service, notifications):
+    record = service.create_trigger(agent_id="a7", payload="Call the dentist")
+    await scheduler._execute_trigger(record)
+    assert notifications.sent == [("now", f"trigger {record.id}", "[SUCCESS] a7 (a7): done")]
+
+
+async def test_a_background_check_with_news_goes_to_the_digest(scheduler, service, notifications):
+    FakeBatchManager.response = "Alice replied: Friday works."
+    record = service.create_trigger(agent_id="a7", payload="Check for Alice's reply", notify="on_change")
+    await scheduler._execute_trigger(record)
+    assert notifications.sent == [("digest", f"trigger {record.id}", "[SUCCESS] a7 (a7): Alice replied: Friday works.")]
+
+
+@pytest.mark.parametrize("response", ["NO_UPDATE", "  NO_UPDATE\n(no reply from Alice yet)"])
+async def test_a_background_check_with_nothing_new_stays_silent(scheduler, service, notifications, response):
+    FakeBatchManager.response = response
+    record = service.create_trigger(agent_id="a7", payload="Check for Alice's reply", notify="on_change")
+    await scheduler._execute_trigger(record)
+    assert [lane for lane, _, _ in notifications.sent] == ["silent"]
+
+
+async def test_a_failed_background_check_is_not_silent(scheduler, service, notifications):
+    FakeBatchManager.outcome = "failure"
+    record = service.create_trigger(agent_id="a7", payload="Check for Alice's reply", notify="on_change")
+    await scheduler._execute_trigger(record)
+    assert notifications.sent == [("digest", f"trigger {record.id}", "[FAILED] a7 (a7): boom")]
+
+
+def test_background_checks_are_told_how_to_say_nothing_changed(scheduler, service):
+    check = service.create_trigger(agent_id="a", payload="Check for Alice's reply", notify="on_change")
+    reminder = service.create_trigger(agent_id="a", payload="Call the dentist")
+    assert scheduler._format_instructions(check, FIXED_NOW).endswith("reply with exactly NO_UPDATE.")
+    assert "NO_UPDATE" not in scheduler._format_instructions(reminder, FIXED_NOW)

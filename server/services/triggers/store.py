@@ -44,6 +44,7 @@ class TriggerStore:
             recurrence_rule TEXT,
             timezone TEXT,
             status TEXT NOT NULL DEFAULT 'active',
+            notify TEXT NOT NULL DEFAULT 'always',
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -60,6 +61,8 @@ class TriggerStore:
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(triggers)")}
             if "agent_name" in columns:
                 conn.execute("ALTER TABLE triggers RENAME COLUMN agent_name TO agent_id")
+            if "notify" not in columns:  # databases from before notification lanes (P7)
+                conn.execute("ALTER TABLE triggers ADD COLUMN notify TEXT NOT NULL DEFAULT 'always'")
             conn.execute(index_sql)
 
     def insert(self, payload: Dict[str, Any]) -> int:

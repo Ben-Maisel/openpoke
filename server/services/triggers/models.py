@@ -18,6 +18,7 @@ class TriggerRecord(BaseModel):
     recurrence_rule: Optional[str] = None
     timezone: Optional[str] = None
     status: str
+    notify: str = "always"  # 'always' (a reminder) or 'on_change' (a background check), P7
     last_error: Optional[str] = None
     created_at: str
     updated_at: str

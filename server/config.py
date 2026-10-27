@@ -107,6 +107,11 @@ class Settings(BaseModel):
     email_watcher_max_results: int = 50
     email_watcher_seen_limit: int = 300  # message IDs remembered to avoid alerting twice
 
+    # --- Notifications to the user (P7) -----------------------------------------------------
+    digest_interval_minutes: int = 60  # held updates go out together once the oldest has waited this long
+    quiet_hours: str = "22:00-07:00"  # user's local time; the digest waits until they end ("" turns them off)
+    notification_check_interval_seconds: float = 60.0  # how often the digest is checked
+
     # --- Routing: which agents the interaction agent sees (P2, P4) ------------------------------
     working_set_recent: int = 5  # most recently used agents always shown
     working_set_matches: int = 5  # best search matches shown on top of those

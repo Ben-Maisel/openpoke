@@ -34,6 +34,15 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "enum": ["active", "paused"],
                         "description": "Initial status (default 'active').",
                     },
+                    "notify": {
+                        "type": "string",
+                        "enum": ["always", "on_change"],
+                        "description": (
+                            "'always' (default) for a reminder the user should get every time it fires; "
+                            "'on_change' for a background check (e.g. 'check hourly whether Alice replied') that "
+                            "only reports when something changed, bundled into a periodic digest."
+                        ),
+                    },
                 },
                 "required": ["payload"],
                 "additionalProperties": False,
@@ -68,6 +77,15 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "type": "string",
                         "enum": ["active", "paused", "completed"],
                         "description": "'paused' stops a reminder (use it to cancel); 'active' resumes it; 'completed' marks it done.",
+                    },
+                    "notify": {
+                        "type": "string",
+                        "enum": ["always", "on_change"],
+                        "description": (
+                            "'always' (default) for a reminder the user should get every time it fires; "
+                            "'on_change' for a background check (e.g. 'check hourly whether Alice replied') that "
+                            "only reports when something changed, bundled into a periodic digest."
+                        ),
                     },
                 },
                 "required": ["trigger_id"],
@@ -110,6 +128,7 @@ def _trigger_record_to_payload(record: TriggerRecord) -> Dict[str, Any]:
         "recurrence_rule": record.recurrence_rule,
         "timezone": record.timezone,
         "status": record.status,
+        "notify": record.notify,
         "last_error": record.last_error,
         "created_at": record.created_at,
         "updated_at": record.updated_at,
@@ -124,6 +143,7 @@ def _create_trigger_tool(
     recurrence_rule: Optional[str] = None,
     start_time: Optional[str] = None,
     status: Optional[str] = None,
+    notify: Optional[str] = None,
 ) -> Dict[str, Any]:
     timezone_value = get_timezone_store().get_timezone()
     try:
@@ -134,6 +154,7 @@ def _create_trigger_tool(
             start_time=start_time,
             timezone_name=timezone_value,
             status=status,
+            notify=notify,
         )
     except Exception as exc:  # pragma: no cover - defensive
         return {"error": str(exc)}
@@ -141,6 +162,7 @@ def _create_trigger_tool(
     return {
         "trigger_id": record.id,
         "status": record.status,
+        "notify": record.notify,
         "next_trigger": record.next_trigger,
         "start_time": record.start_time,
         "timezone": record.timezone,
@@ -157,6 +179,7 @@ def _update_trigger_tool(
     recurrence_rule: Optional[str] = None,
     start_time: Optional[str] = None,
     status: Optional[str] = None,
+    notify: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
         trigger_id_int = int(trigger_id)
@@ -173,6 +196,7 @@ def _update_trigger_tool(
             start_time=start_time,
             timezone_name=timezone_value,
             status=status,
+            notify=notify,
         )
     except Exception as exc:  # pragma: no cover - defensive
         return {"error": str(exc)}
@@ -187,6 +211,7 @@ def _update_trigger_tool(
         "start_time": record.start_time,
         "timezone": record.timezone,
         "recurrence_rule": record.recurrence_rule,
+        "notify": record.notify,
         "last_error": record.last_error,
     }
 

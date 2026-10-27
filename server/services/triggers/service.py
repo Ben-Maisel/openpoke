@@ -12,6 +12,7 @@ from .utils import (
     build_recurrence,
     coerce_start_datetime,
     load_rrule,
+    normalize_notify,
     normalize_status,
     parse_iso,
     resolve_timezone,
@@ -38,6 +39,7 @@ class TriggerService:
         start_time: Optional[str] = None,
         timezone_name: Optional[str] = None,
         status: Optional[str] = None,
+        notify: Optional[str] = None,
     ) -> TriggerRecord:
         tz = resolve_timezone(timezone_name)
         now = utc_now()
@@ -58,6 +60,7 @@ class TriggerService:
             "recurrence_rule": stored_recurrence,
             "timezone": getattr(tz, "key", "UTC"),
             "status": normalize_status(status),
+            "notify": normalize_notify(notify),
             "last_error": None,
             "created_at": timestamp,
             "updated_at": timestamp,
@@ -78,6 +81,7 @@ class TriggerService:
         start_time: Optional[str] = None,
         timezone_name: Optional[str] = None,
         status: Optional[str] = None,
+        notify: Optional[str] = None,
         last_error: Optional[str] = None,
         clear_error: bool = False,
     ) -> Optional[TriggerRecord]:
@@ -96,6 +100,8 @@ class TriggerService:
         fields: Dict[str, Any] = {}
         if payload is not None:
             fields["payload"] = payload
+        if notify is not None:
+            fields["notify"] = normalize_notify(notify)
 
         normalized_status = None
         status_changed_to_active = False

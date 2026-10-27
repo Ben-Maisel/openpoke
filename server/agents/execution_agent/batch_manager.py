@@ -58,13 +58,19 @@ class ExecutionBatchManager:
         agent_id: str,
         instructions: str,
         request_id: Optional[str] = None,
+        *,
+        report: bool = True,
     ) -> ExecutionResult:
-        """Execute an agent asynchronously and buffer the result for batch dispatch."""
+        """Execute an agent asynchronously and buffer the result for batch dispatch.
+
+        With report=False the caller handles the result itself (triggers route it through the
+        notification lanes, P7); the run still waits its turn behind the agent's other runs.
+        """
 
         if not request_id:
             request_id = str(uuid.uuid4())
 
-        batch_id = await self._register_pending_execution(agent_id, instructions, request_id)
+        batch_id = await self._register_pending_execution(agent_id, instructions, request_id) if report else None
 
         try:
             # Runs of the same agent wait their turn, so each one starts from the previous run's memory.
@@ -100,7 +106,8 @@ class ExecutionBatchManager:
         finally:
             self._pending.pop(request_id, None)
 
-        await self._complete_execution(batch_id, result, agent_id)
+        if batch_id is not None:
+            await self._complete_execution(batch_id, result, agent_id)
         return result
 
     # Add execution request to current batch or create new batch if none exists
@@ -185,13 +192,7 @@ class ExecutionBatchManager:
     def _format_batch_payload(self, results: List[ExecutionResult]) -> str:
         """Render execution results into the interaction-agent format."""
 
-        entries: List[str] = []
-        for result in results:
-            status = "SUCCESS" if result.success else "FAILED"
-            response_text = (result.response or "(no response provided)").strip()
-            # The id rides along in the conversation history, so follow-ups can route straight back
-            entries.append(f"[{status}] {result.agent_name} ({result.agent_id}): {response_text}")
-        return "\n".join(entries)
+        return "\n".join(format_result(result) for result in results)
 
     # Forward combined execution results to interaction agent for user response generation
     async def _dispatch_to_interaction_agent(self, payload: str) -> None:
@@ -207,6 +208,13 @@ class ExecutionBatchManager:
             return
 
         loop.create_task(runtime.handle_agent_message(payload))
+
+
+# One result as the interaction agent sees it; the id rides along so follow-ups can route straight back
+def format_result(result: ExecutionResult) -> str:
+    status = "SUCCESS" if result.success else "FAILED"
+    response_text = (result.response or "(no response provided)").strip()
+    return f"[{status}] {result.agent_name} ({result.agent_id}): {response_text}"
 
 
 _shared_manager: Optional[ExecutionBatchManager] = None

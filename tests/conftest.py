@@ -71,6 +71,7 @@ def clean_state():
 
     Agent IDs are never reused, so tests must use the IDs `create` returns rather than assume `a1`.
     """
+    from server.services.notifications import get_notification_center
     from server.services import (
         get_agent_registry,
         get_conversation_log,
@@ -85,6 +86,7 @@ def clean_state():
         get_draft_store().clear()
         get_execution_agent_logs().clear_all()
         get_trigger_service().clear_all()
+        get_notification_center().clear()
 
     reset()
     yield

@@ -6,11 +6,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Set
 
-from ..agents.execution_agent.batch_manager import get_execution_batch_manager
+from ..agents.execution_agent.batch_manager import format_result, get_execution_batch_manager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..config import get_settings
 from ..logging_config import logger
+from .notifications import get_notification_center
 from .triggers import TriggerRecord, get_trigger_service
+
+NO_UPDATE = "NO_UPDATE"  # what a background check replies when there's nothing new (P7)
 
 
 UTC = timezone.utc
@@ -92,15 +95,13 @@ class TriggerScheduler:
                 },
             )
             execution_manager = get_execution_batch_manager()  # shared: same per-agent locks as user requests
-            result = await execution_manager.execute_agent(
-                trigger.agent_id,
-                instructions,
-            )
+            result = await execution_manager.execute_agent(trigger.agent_id, instructions, report=False)
             if result.success:
                 self._handle_success(trigger, fired_at)
             else:
                 error_text = result.error or result.response
                 self._handle_failure(trigger, fired_at, error_text)
+            await self._report(trigger, result)
         except Exception as exc:  # pragma: no cover - defensive
             self._handle_failure(trigger, _utc_now(), str(exc))
             logger.exception(
@@ -109,6 +110,19 @@ class TriggerScheduler:
             )
         finally:
             self._in_flight.discard(trigger.id)
+
+    # Reminders reach the user now; background checks go in the digest, or nowhere if nothing changed (P7)
+    async def _report(self, trigger: TriggerRecord, result: ExecutionResult) -> None:
+        if trigger.notify != "on_change":
+            lane = "now"
+        elif result.success and (result.response or "").strip().startswith(NO_UPDATE):
+            lane = "silent"
+        else:
+            lane = "digest"
+        try:
+            await get_notification_center().notify(format_result(result), lane=lane, source=f"trigger {trigger.id}")
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Failed to report trigger result", extra={"trigger_id": trigger.id, "error": str(exc)})
 
     def _handle_success(self, trigger: TriggerRecord, fired_at: datetime) -> None:
         logger.info(
@@ -149,6 +163,11 @@ class TriggerScheduler:
             f"Scheduled occurrence time: {scheduled_for}.\n\n"
             f"Metadata:\n{metadata}\n\n"
             f"Payload:\n{trigger.payload}"
+            + (
+                "\n\nThis is a background check: the user only hears about it when something changed. "
+                f"If nothing new the user would care about has happened since the last check, reply with exactly {NO_UPDATE}."
+                if trigger.notify == "on_change" else ""
+            )
         )
 
 

@@ -239,3 +239,47 @@ def test_creating_with_an_unrecognised_status_stores_nothing(service, bad):
     with pytest.raises(ValueError):
         service.create_trigger(agent_id="a", payload="p", status=bad)
     assert service.list_triggers(agent_id="a") == []
+
+
+# --- notify mode (P7) ---------------------------------------------------------
+
+def test_triggers_are_reminders_unless_told_otherwise(service):
+    assert service.create_trigger(agent_id="a", payload="Call the dentist").notify == "always"
+    check = service.create_trigger(agent_id="a", payload="Check for Alice's reply", notify=" On_Change ")
+    assert check.notify == "on_change"
+
+
+def test_unknown_notify_modes_are_rejected_with_a_clear_message(service):
+    with pytest.raises(ValueError, match="Use 'always' for a reminder"):
+        service.create_trigger(agent_id="a", payload="x", notify="sometimes")
+
+
+def test_notify_can_be_changed_later(service):
+    record = service.create_trigger(agent_id="a", payload="Check for Alice's reply")
+    updated = service.update_trigger(record.id, agent_id="a", notify="on_change")
+    assert updated.notify == "on_change"
+    assert service.update_trigger(record.id, agent_id="a", payload="new text").notify == "on_change"
+
+
+def test_databases_from_before_notify_are_migrated(tmp_path, clock):
+    import sqlite3
+
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as conn:
+        conn.execute("""CREATE TABLE triggers (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL,
+                        payload TEXT NOT NULL, start_time TEXT, next_trigger TEXT, recurrence_rule TEXT, timezone TEXT,
+                        status TEXT NOT NULL DEFAULT 'active', last_error TEXT, created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL)""")
+        conn.execute("INSERT INTO triggers (agent_id, payload, created_at, updated_at) VALUES ('a', 'old', 't', 't')")
+    service = TriggerService(TriggerStore(path))
+    assert [t.notify for t in service.list_triggers(agent_id="a")] == ["always"]
+
+
+def test_the_worker_tool_sets_and_reports_notify(clean_state):
+    from server.agents.execution_agent.tools import triggers as trigger_tools
+
+    tools = trigger_tools.build_registry("a9")
+    created = tools["createTrigger"](payload="Check for Alice's reply", notify="on_change")
+    assert created["notify"] == "on_change"
+    assert tools["listTriggers"]()["triggers"][0]["notify"] == "on_change"
+    assert "Invalid notify" in tools["createTrigger"](payload="x", notify="sometimes")["error"]

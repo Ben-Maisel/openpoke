@@ -44,6 +44,23 @@ def resolve_timezone(timezone_name: Optional[str]) -> ZoneInfo:
     return ZoneInfo("UTC")
 
 
+NOTIFY_MODES = ("always", "on_change")
+
+
+def normalize_notify(notify: Optional[str]) -> str:
+    """Validate how a trigger's runs reach the user; no value means 'always' (a reminder)."""
+
+    if notify is None or not notify.strip():
+        return "always"
+    normalized = notify.strip().lower()
+    if normalized not in NOTIFY_MODES:
+        raise ValueError(
+            f"Invalid notify {notify!r}. Use 'always' for a reminder the user should get, or 'on_change' "
+            "for a background check that only reports when something changed."
+        )
+    return normalized
+
+
 def normalize_status(status: Optional[str]) -> str:
     """Validate a trigger status; no status means the default ("active").
 

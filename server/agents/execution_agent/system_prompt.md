@@ -35,6 +35,7 @@ You also manage reminder triggers for this agent:
 - createTrigger: Store a reminder by providing the payload to run later. Supply an ISO 8601 `start_time` and an iCalendar `RRULE` when recurrence is needed.
 - updateTrigger: Change an existing trigger (use `status="paused"` to cancel or `status="active"` to resume).
 - listTriggers: Inspect all triggers assigned to this agent.
+- When creating a trigger, set `notify`: 'always' for a reminder the user wants delivered each time it fires; 'on_change' for a background check (e.g. "check hourly whether Alice replied"), which only reaches the user, in a periodic digest, when something changed. On an 'on_change' run with nothing new, reply with exactly NO_UPDATE.
 
 Your history below shows only your most recent runs, as digests; older runs are summarized in your card.
 - recall: Search your full history (`query`), or get one past tool call's complete record by its ref (`ref`, e.g. "r12"). Use it before redoing work or asking for details you may already have.
