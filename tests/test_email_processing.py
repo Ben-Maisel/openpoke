@@ -81,7 +81,6 @@ def test_boilerplate_lines_are_removed(cleaner):
     assert text == "Real content"
 
 
-@pytest.mark.xfail(strict=True, reason="P25: noise filters delete legitimate text containing 'image:'")
 def test_legitimate_text_resembling_noise_is_kept(cleaner):
     text = cleaner.post_process_text("Your Docker image: nginx:1.25 was pushed\nDeploy finished")
     assert "nginx:1.25" in text
@@ -115,7 +114,6 @@ def test_message_without_body_is_empty(cleaner):
     assert cleaner.clean_email_content({"payload": {}}) == ""
 
 
-@pytest.mark.xfail(strict=True, reason="P25: body search ignores nested multipart (any email with an attachment)")
 def test_body_is_found_in_email_with_attachment(cleaner):
     # Gmail's usual shape for "email + attachment": the readable body is
     # nested one level down, inside multipart/alternative.
@@ -129,7 +127,6 @@ def test_body_is_found_in_email_with_attachment(cleaner):
     assert cleaner.clean_email_content(message) == "See the attached agenda."
 
 
-@pytest.mark.xfail(strict=True, reason="P25: plain-text parts inside multipart are never read")
 def test_plain_text_part_inside_multipart_is_found(cleaner):
     message = {"payload": part("multipart/mixed", parts=[
         part("text/plain", "Plain body only."),
@@ -138,10 +135,58 @@ def test_plain_text_part_inside_multipart_is_found(cleaner):
     assert cleaner.clean_email_content(message) == "Plain body only."
 
 
-@pytest.mark.xfail(strict=True, reason="P25: base64 without '=' padding fails to decode and the body is dropped")
 def test_unpadded_base64_body_is_decoded(cleaner):
     message = {"payload": part("text/plain", "Hello", pad=False)}
     assert cleaner.clean_email_content(message) == "Hello"
+
+
+def test_single_part_html_email_is_cleaned_not_treated_as_plain_text(cleaner):
+    message = {"payload": part("text/html", "<p>Meeting moved to <b>3pm</b></p>")}
+    assert cleaner.clean_email_content(message) == "Meeting moved to\n3pm"
+
+
+def test_deeply_nested_html_is_found(cleaner):
+    message = {"payload": part("multipart/mixed", parts=[
+        part("multipart/related", parts=[
+            part("multipart/alternative", parts=[part("text/html", "<p>deep</p>")]),
+            part("image/png", filename="logo.png"),
+        ]),
+    ])}
+    assert cleaner.clean_email_content(message) == "deep"
+
+
+def test_part_charset_is_respected(cleaner):
+    latin = part("text/plain", "Café à côté", encoding="latin-1")
+    latin["headers"] = [{"name": "Content-Type", "value": 'text/plain; charset="ISO-8859-1"'}]
+    assert cleaner.clean_email_content({"payload": latin}) == "Café à côté"
+
+
+def test_unknown_charset_falls_back_to_utf8(cleaner):
+    odd = part("text/plain", "hello")
+    odd["headers"] = [{"name": "Content-Type", "value": "text/plain; charset=made-up-9"}]
+    assert cleaner.clean_email_content({"payload": odd}) == "hello"
+
+
+def test_part_without_mime_type_is_treated_as_plain_text(cleaner):
+    message = {"payload": {"body": {"data": b64("no type given")}}}
+    assert cleaner.clean_email_content(message) == "no type given"
+
+
+def test_undecodable_part_is_skipped_for_the_next_one(cleaner):
+    message = {"payload": part("multipart/alternative", parts=[
+        {"mimeType": "text/html", "body": {"data": "@@not base64@@"}},
+        part("text/plain", "readable"),
+    ])}
+    assert cleaner.clean_email_content(message) == "readable"
+
+
+def test_message_text_is_used_when_the_payload_has_no_body(cleaner):
+    assert cleaner.clean_email_content({"payload": {}, "messageText": "parsed by composio"}) == "parsed by composio"
+
+
+def test_boilerplate_at_line_start_is_still_removed(cleaner):
+    text = cleaner.post_process_text("Image: banner.png\nHello\nAlt text: logo\nBye")
+    assert text == "Hello\nBye"
 
 
 # --- Attachments ----------------------------------------------------------

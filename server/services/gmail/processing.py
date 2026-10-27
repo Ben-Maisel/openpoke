@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import html
 import re
 from dataclasses import dataclass
@@ -160,11 +162,13 @@ class EmailTextCleaner:
         text = re.sub(r"[ \t]+", " ", text)
         text = re.sub(r"\n ", "\n", text)
 
+        # Boilerplate phrases only count when they start a line; mid-sentence they're real content
+        # (e.g. "Your Docker image: nginx:1.25 was pushed").
         noise_patterns = [
-            r"View this email in your browser.*?\n",
-            r"If you can't see this email.*?\n",
-            r"This is a system-generated email.*?\n",
-            r"Please do not reply to this email.*?\n",
+            r"(?m)^[ \t]*View this email in your browser.*\n?",
+            r"(?m)^[ \t]*If you can't see this email.*\n?",
+            r"(?m)^[ \t]*This is a system-generated email.*\n?",
+            r"(?m)^[ \t]*Please do not reply to this email.*\n?",
             r"Unsubscribe.*?preferences.*?\n",
             r"© \d{4}.*?All rights reserved.*?\n",
             r"\[Image:.*?\]",
@@ -172,8 +176,8 @@ class EmailTextCleaner:
             r"<image>.*?</image>",
             r"\(image\)",
             r"\(Image\)",
-            r"Image: .*?\n",
-            r"Alt text: .*?\n",
+            r"(?m)^[ \t]*Image: .*\n?",
+            r"(?m)^[ \t]*Alt text: .*\n?",
         ]
 
         for pattern in noise_patterns:
@@ -189,39 +193,15 @@ class EmailTextCleaner:
         return self.post_process_text(stripped)
 
     def _extract_html_body(self, message: Dict[str, Any]) -> Optional[str]:
-        payload = message.get("payload") or {}
-        if isinstance(payload, dict):
-            parts = payload.get("parts")
-            if isinstance(parts, list):
-                for part in parts:
-                    if not isinstance(part, dict):
-                        continue
-                    mime_type = part.get("mimeType") or ""
-                    if mime_type.lower() == "text/html":
-                        if body := part.get("body"):
-                            data = body.get("data")
-                            if isinstance(data, str):
-                                try:
-                                    import base64
-
-                                    return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-                                except Exception:
-                                    continue
-        return message.get("htmlBody")
+        found = _find_part_text(message.get("payload"), "text/html")
+        return found if found is not None else message.get("htmlBody")
 
     def _extract_plain_body(self, message: Dict[str, Any]) -> Optional[str]:
-        payload = message.get("payload") or {}
-        if isinstance(payload, dict):
-            if body := payload.get("body"):
-                data = body.get("data")
-                if isinstance(data, str):
-                    try:
-                        import base64
-
-                        return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-                    except Exception:
-                        pass
-        return message.get("textBody")
+        found = _find_part_text(message.get("payload"), "text/plain")
+        if found is not None:
+            return found
+        # Flat fallbacks; Composio's verbose fetch adds a parsed `messageText`.
+        return message.get("textBody") or message.get("messageText")
 
     def extract_attachment_info(self, attachments: Iterable[Any]) -> Tuple[bool, int, List[str]]:
         filenames: List[str] = []
@@ -233,6 +213,49 @@ class EmailTextCleaner:
                     filenames.append(str(filename))
                     count += 1
         return bool(count), count, filenames
+
+
+_CHARSET = re.compile(r"charset\s*=\s*\"?([\w.:-]+)", re.IGNORECASE)
+
+
+# Depth-first search of a Gmail payload tree for the first decodable part of `mime_type`.
+# Emails with attachments nest the readable body (multipart/mixed > multipart/alternative > text/*).
+def _find_part_text(part: Any, mime_type: str) -> Optional[str]:
+    if not isinstance(part, dict):
+        return None
+    # MIME's default content type is text/plain
+    if (part.get("mimeType") or "text/plain").lower() == mime_type:
+        data = (part.get("body") or {}).get("data")
+        if isinstance(data, str) and data:
+            decoded = _decode_body(data, _part_charset(part))
+            if decoded is not None:
+                return decoded
+    for child in part.get("parts") or []:
+        found = _find_part_text(child, mime_type)
+        if found is not None:
+            return found
+    return None
+
+
+def _part_charset(part: Dict[str, Any]) -> str:
+    for header in part.get("headers") or []:
+        if isinstance(header, dict) and str(header.get("name", "")).lower() == "content-type":
+            match = _CHARSET.search(str(header.get("value", "")))
+            if match:
+                return match.group(1)
+    return "utf-8"
+
+
+# Gmail bodies are base64url, sometimes without '=' padding
+def _decode_body(data: str, charset: str) -> Optional[str]:
+    try:
+        raw = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+    except (binascii.Error, ValueError):
+        return None
+    try:
+        return raw.decode(charset, errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
 
 
 @dataclass(frozen=True)

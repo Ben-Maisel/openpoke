@@ -65,7 +65,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🟢 Solved |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🟢 Solved |
-| P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
+| P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🟢 Solved |
 | P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
 | P27 | The interaction agent can "edit" a draft itself, so what the user approves isn't what Gmail sends | D | High | 🔴 Open |
 
@@ -325,7 +325,21 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Why it matters:** an empty body reaches both the execution agents (search results) and the important-email classifier. An email with an attachment can't be summarized or triaged.
 - **\*Severity caveat:** confirmed against the standard Gmail API payload shape. How often it bites depends on exactly what Composio returns, which will be verified with a live fetch once Gmail is connected.
 - **Found by:** four strict expected failures in `tests/test_email_processing.py`.
-- **Solution:** —
+- **Also found while fixing:** a single-part HTML email (no attachments, no plain-text version) was read as plain text with its HTML tags left in, because the plain-text path ignored the part's type.
+- **Solution:** body extraction in `server/services/gmail/processing.py` is now a single tree search, `_find_part_text`:
+  - **Any depth:** it walks the whole Gmail payload tree and returns the first part of the wanted type (HTML preferred, then plain text).
+  - **Missing type:** a part with no type counts as `text/plain`, which is MIME's default.
+  - **Charsets:** the part's declared charset is used to decode it.
+  - **Padding:** unpadded base64 is padded before decoding.
+  - **Bad parts:** an undecodable part is skipped in favor of the next one.
+  - **Fallbacks:** `htmlBody`, then `textBody`, then Composio's parsed `messageText`.
+  - **Noise filters:** the line-based filters ("Image:", "Alt text:", "View this email in your browser", …) now only match at the start of a line, so real sentences containing those words survive.
+
+  **Verified:**
+  - the four P25 tests pass, with their expected-failure markers removed
+  - new tests cover single-part HTML, three-level nesting, charsets (including an unknown one), a part with no type, skipping an undecodable part, the `messageText` fallback, and line-start boilerplate still being removed
+
+  **Still open:** a live check against a real Composio response once Gmail is connected.
 
 ### P26: Default model no longer exists
 - **Where:** [server/config.py](server/config.py) (all five `*_model` settings)
