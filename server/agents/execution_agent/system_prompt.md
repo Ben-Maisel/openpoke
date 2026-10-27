@@ -27,10 +27,9 @@ What you have on record (exact IDs and addresses from your past tool calls):
 
 # Available Tools
 You have access to the following Gmail tools:
-- gmail_create_draft: Create an email draft
-- gmail_execute_draft: Send a previously created draft
-- gmail_forward_email: Forward an existing email
-- gmail_reply_to_thread: Reply to an email thread
+- gmail_create_draft: Create an email draft. To reply to an email, create a draft with its thread_id.
+- gmail_forward_email: Prepare forwarding an existing email (returns a forward ID; nothing is sent)
+- gmail_execute_draft: Send a draft or prepared forward. It is refused unless the user has seen and approved it, so report new draft and forward IDs and wait for approval.
 
 You also manage reminder triggers for this agent:
 - createTrigger: Store a reminder by providing the payload to run later. Supply an ISO 8601 `start_time` and an iCalendar `RRULE` when recurrence is needed.

@@ -30,8 +30,6 @@ def test_tool_names_are_unique():
         (gmail_tools.gmail_create_draft, {"recipient_email": "a@x.com", "subject": "s", "body": "b"}, "GMAIL_CREATE_EMAIL_DRAFT"),
         (gmail_tools.gmail_execute_draft, {"draft_id": "r-1"}, "GMAIL_SEND_DRAFT"),
         (gmail_tools.gmail_delete_draft, {"draft_id": "r-1"}, "GMAIL_DELETE_DRAFT"),
-        (gmail_tools.gmail_forward_email, {"message_id": "m-1", "recipient_email": "b@x.com"}, "GMAIL_FORWARD_MESSAGE"),
-        (gmail_tools.gmail_reply_to_thread, {"thread_id": "t-1", "recipient_email": "a@x.com", "message_body": "hi"}, "GMAIL_REPLY_TO_THREAD"),
         (gmail_tools.gmail_get_contacts, {}, "GMAIL_GET_CONTACTS"),
         (gmail_tools.gmail_get_people, {}, "GMAIL_GET_PEOPLE"),
         (gmail_tools.gmail_list_drafts, {}, "GMAIL_LIST_DRAFTS"),
@@ -99,6 +97,56 @@ def test_a_failed_send_keeps_the_draft_approved(fake_gmail):
     assert result["successful"] is False
     assert fake_gmail.sent == []
     assert get_draft_store().get("r-404").status == "approved"
+
+
+def test_there_is_no_tool_that_replies_without_a_draft():
+    names = {schema["function"]["name"] for schema in get_tool_schemas()}
+    assert "gmail_reply_to_thread" not in names
+    thread = gmail_tools._SCHEMAS[0]["function"]["parameters"]["properties"]["thread_id"]
+    assert "reply" in thread["description"]
+
+
+def test_a_reply_is_a_draft_on_the_thread(fake_gmail):
+    created = gmail_tools.gmail_create_draft(recipient_email="a@x.com", subject="Re: lunch", body="Yes!", thread_id="t-1")
+    assert fake_gmail.action_names() == ["GMAIL_CREATE_EMAIL_DRAFT"]
+    assert fake_gmail.drafts[created["data"]["id"]]["thread_id"] == "t-1"
+    assert fake_gmail.sent == []
+
+
+def test_forwarding_only_prepares_a_forward_for_approval(fake_gmail):
+    forward = get_tool_registry(agent_id="a7")["gmail_forward_email"](
+        message_id="m-1", recipient_email="b@x.com", additional_text="FYI")
+    assert (forward["data"]["id"], forward["status"]) == ("fwd-1", "awaiting_approval")
+    assert fake_gmail.actions == []  # nothing reaches Gmail
+    stored = get_draft_store().get("fwd-1")
+    assert (stored.kind, stored.agent_id, stored.message_id, stored.recipient, stored.body, stored.status) == (
+        "forward", "a7", "m-1", "b@x.com", "FYI", "open")
+    assert stored.render() == "Forward of email m-1\nTo: b@x.com\n\nFYI"
+    second = gmail_tools.gmail_forward_email(message_id="m-2", recipient_email="c@x.com")
+    assert second["data"]["id"] == "fwd-2"
+
+
+def test_an_unapproved_forward_is_refused(fake_gmail):
+    gmail_tools.gmail_forward_email(message_id="m-1", recipient_email="b@x.com")
+    result = gmail_tools.gmail_execute_draft(draft_id="fwd-1")
+    assert result["error"].startswith("Not sent: draft 'fwd-1' is open.")
+    assert fake_gmail.actions == []
+
+
+def test_an_approved_forward_is_sent_through_gmails_forward_action(fake_gmail):
+    gmail_tools.gmail_forward_email(message_id="m-1", recipient_email="b@x.com", additional_text="FYI")
+    get_draft_store().mark_shown("fwd-1")
+    get_draft_store().approve("fwd-1", "yes forward it")
+    gmail_tools.gmail_execute_draft(draft_id="fwd-1")
+    assert fake_gmail.sent == [{"kind": "forward", "message_id": "m-1", "recipient_email": "b@x.com",
+                                "additional_text": "FYI"}]
+    assert get_draft_store().get("fwd-1").status == "sent"
+
+
+def test_discarding_a_prepared_forward_never_calls_gmail(fake_gmail):
+    gmail_tools.gmail_forward_email(message_id="m-1", recipient_email="b@x.com")
+    assert gmail_tools.gmail_delete_draft(draft_id="fwd-1") == {"successful": True, "data": {}}
+    assert fake_gmail.actions == []
 
 
 def test_tools_refuse_when_gmail_is_not_connected(fake_gmail):

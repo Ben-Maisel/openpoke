@@ -51,12 +51,14 @@ def test_draft_digest_keeps_the_whole_body():
 
 
 def test_reply_and_forward_digests():
+    # Direct replies were removed (replies are drafts now), but older journals still hold them.
     reply = digest_tool_call(call("gmail_reply_to_thread",
                                   {"thread_id": "t-1", "recipient_email": "a@x.com", "message_body": "Sounds good!"}))
     assert reply == "gmail_reply_to_thread [r7]: replied in thread t-1 to a@x.com\nSounds good!"
     forward = digest_tool_call(call("gmail_forward_email",
-                                    {"message_id": "m-1", "recipient_email": "b@x.com", "additional_text": "FYI"}))
-    assert forward == "gmail_forward_email [r7]: forwarded email m-1 to b@x.com\nFYI"
+                                    {"message_id": "m-1", "recipient_email": "b@x.com", "additional_text": "FYI"},
+                                    {"successful": True, "data": {"id": "fwd-1"}}))
+    assert forward == "gmail_forward_email [r7]: forward fwd-1 of email m-1 to b@x.com\nFYI"
 
 
 @pytest.mark.parametrize("tool, verb", [("gmail_execute_draft", "sent"), ("gmail_delete_draft", "deleted")])

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
 from server.services.execution import get_draft_store
@@ -12,7 +13,10 @@ _SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "gmail_create_draft",
-            "description": "Create a Gmail draft via Composio, supporting html/plain bodies, cc/bcc, and attachments.",
+            "description": (
+                "Create a Gmail draft (nothing is sent), supporting html/plain bodies, cc/bcc, and attachments. "
+                "To reply to an email, create a draft with its thread_id. Report the draft ID so the user can review it."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -46,7 +50,7 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     },
                     "thread_id": {
                         "type": "string",
-                        "description": "Existing Gmail thread id if this draft belongs to a thread.",
+                        "description": "Gmail thread id to reply in; set it to make this draft a reply.",
                     },
                     "attachment": {
                         "type": "object",
@@ -68,13 +72,16 @@ _SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "gmail_execute_draft",
-            "description": "Send a previously created Gmail draft using Composio.",
+            "description": (
+                "Send a draft or prepared forward. Only works once the user has seen and approved it; "
+                "otherwise it is refused."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "draft_id": {
                         "type": "string",
-                        "description": "Identifier of the Gmail draft to send.",
+                        "description": "ID of the draft (e.g. 'r-12') or prepared forward (e.g. 'fwd-3') to send.",
                     },
                 },
                 "required": ["draft_id"],
@@ -86,7 +93,10 @@ _SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "gmail_forward_email",
-            "description": "Forward an existing Gmail message with optional additional context.",
+            "description": (
+                "Prepare forwarding an existing email (nothing is sent). Returns a forward ID (e.g. 'fwd-3'); "
+                "report it so the user can review it, then send it with gmail_execute_draft once approved."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -111,63 +121,8 @@ _SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "gmail_reply_to_thread",
-            "description": "Send a reply within an existing Gmail thread via Composio.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thread_id": {
-                        "type": "string",
-                        "description": "Gmail thread id to reply to.",
-                    },
-                    "recipient_email": {
-                        "type": "string",
-                        "description": "Primary recipient for the reply (usually the original sender).",
-                    },
-                    "message_body": {
-                        "type": "string",
-                        "description": "Reply body. Use HTML markup when is_html is true.",
-                    },
-                    "cc": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of CC recipient emails.",
-                    },
-                    "bcc": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional list of BCC recipient emails.",
-                    },
-                    "extra_recipients": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Additional recipients if needed.",
-                    },
-                    "is_html": {
-                        "type": "boolean",
-                        "description": "Set true when the body contains HTML content.",
-                    },
-                    "attachment": {
-                        "type": "object",
-                        "description": "Single attachment metadata (requires Composio-uploaded asset).",
-                        "properties": {
-                            "s3key": {"type": "string", "description": "S3 key of uploaded file."},
-                            "name": {"type": "string", "description": "Attachment filename."},
-                            "mimetype": {"type": "string", "description": "Attachment MIME type."},
-                        },
-                        "required": ["s3key", "name", "mimetype"],
-                    },
-                },
-                "required": ["thread_id", "recipient_email", "message_body"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "gmail_delete_draft",
-            "description": "Delete a specific Gmail draft using the Composio Gmail integration.",
+            "description": "Delete a draft or discard a prepared forward.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -352,7 +307,7 @@ def gmail_create_draft(
     return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
 
 
-# Send a previously created Gmail draft using Composio, only once the user has seen and approved it (P20)
+# Send an approved draft or prepared forward; anything the user hasn't seen and approved is refused (P20)
 def gmail_execute_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
@@ -366,64 +321,47 @@ def gmail_execute_draft(
                 "Report the draft ID so Poke can show it to the user and get their approval."
             )
         }
-    arguments = {"draft_id": draft_id}
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    result = _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
+    if draft.kind == "forward":
+        arguments = {"message_id": draft.message_id, "recipient_email": draft.recipient,
+                     "additional_text": draft.body or None}
+        result = _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
+    else:
+        result = _execute("GMAIL_SEND_DRAFT", composio_user_id, {"draft_id": draft_id})
     if isinstance(result, dict) and not result.get("error") and result.get("successful") is not False:
         store.mark_sent(draft_id)
     return result
 
 
-# Forward an existing Gmail message with optional additional context
+# Prepare a forward of an existing email; it is only sent once the user approves it
 def gmail_forward_email(
     message_id: str,
     recipient_email: str,
     additional_text: Optional[str] = None,
+    *,
+    agent_id: str = "",
 ) -> Dict[str, Any]:
-    arguments = {
-        "message_id": message_id,
-        "recipient_email": recipient_email,
-        "additional_text": additional_text,
+    forward = get_draft_store().record_forward(
+        agent_id=agent_id, message_id=message_id, recipient=recipient_email, note=additional_text or "",
+    )
+    return {
+        "successful": True,
+        "data": {"id": forward.id},
+        "status": "awaiting_approval",
+        "message": f"Not sent yet. Report forward {forward.id} so the user can review it; "
+                   "send it with gmail_execute_draft once they approve.",
     }
-    composio_user_id = get_active_gmail_user_id()
-    if not composio_user_id:
-        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
 
 
-# Send a reply within an existing Gmail thread via Composio
-def gmail_reply_to_thread(
-    thread_id: str,
-    recipient_email: str,
-    message_body: str,
-    cc: Optional[List[str]] = None,
-    bcc: Optional[List[str]] = None,
-    extra_recipients: Optional[List[str]] = None,
-    is_html: Optional[bool] = None,
-    attachment: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    arguments = {
-        "thread_id": thread_id,
-        "recipient_email": recipient_email,
-        "message_body": message_body,
-        "cc": cc,
-        "bcc": bcc,
-        "extra_recipients": extra_recipients,
-        "is_html": is_html,
-        "attachment": attachment,
-    }
-    composio_user_id = get_active_gmail_user_id()
-    if not composio_user_id:
-        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
-
-
-# Delete a specific Gmail draft using the Composio Gmail integration
+# Delete a Gmail draft, or discard a prepared forward (which exists only in the draft store)
 def gmail_delete_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
+    draft = get_draft_store().get(draft_id)
+    if draft is not None and draft.kind == "forward":
+        return {"successful": True, "data": {}}  # the runtime marks it deleted, as for any draft
     arguments = {"draft_id": draft_id}
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
@@ -510,15 +448,14 @@ def gmail_search_people(
 
 
 # Return Gmail tool callables
-def build_registry(agent_id: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+def build_registry(agent_id: str) -> Dict[str, Callable[..., Any]]:
     """Return Gmail tool callables."""
     
     return {
         "gmail_create_draft": gmail_create_draft,
         "gmail_execute_draft": gmail_execute_draft,
         "gmail_delete_draft": gmail_delete_draft,
-        "gmail_forward_email": gmail_forward_email,
-        "gmail_reply_to_thread": gmail_reply_to_thread,
+        "gmail_forward_email": partial(gmail_forward_email, agent_id=agent_id),
         "gmail_get_contacts": gmail_get_contacts,
         "gmail_get_people": gmail_get_people,
         "gmail_list_drafts": gmail_list_drafts,
@@ -533,7 +470,6 @@ __all__ = [
     "gmail_execute_draft",
     "gmail_delete_draft",
     "gmail_forward_email",
-    "gmail_reply_to_thread",
     "gmail_get_contacts",
     "gmail_get_people",
     "gmail_list_drafts",

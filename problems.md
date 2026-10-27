@@ -60,7 +60,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🟢 Solved |
 | P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
-| P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🟡 Drafts solved; replies and forwards next |
+| P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🟢 Solved |
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🟢 Solved |
@@ -447,7 +447,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py)
 - **What:** "never send without the user's confirmation" exists only as prompt text. In code, `gmail_execute_draft` sends any draft ID the LLM passes, including one the user never saw. Sending email can't be undone.
 - **Planned:** using the draft store from P16, only allow a send for a draft that was actually shown to the user, and record the approval.
-- **Solution (drafts):**
+- **Solution:**
   - **Approval is a recorded step.** The interaction agent calls `approve_draft(draft_id)` when your reply approves a draft. It succeeds only if two things are true:
     - the draft was shown with `send_draft`
     - a user message arrived **after** that showing; one written before it, or before an earlier showing, doesn't count
@@ -460,7 +460,18 @@ Each step builds on the previous ones. Related problems that touch the same code
     - tool tests cover every refused state, no double send, and a failed send staying approved
     - approval tests cover a reply that came before the showing, a re-showing that needs a fresh reply, and a reply to a different draft
     - the end-to-end draft → "send it" → sent test records your "send it" as the approval
-  - **Still open:** `gmail_reply_to_thread` and `gmail_forward_email` send immediately, with no draft. They get the same treatment next.
+  - **Replies and forwards no longer bypass the gate.** Both used to send immediately, with no draft. Now everything outgoing is a draft, and `gmail_execute_draft` is the only way out.
+    - **Replies:** `gmail_reply_to_thread` is removed. A reply is a draft created with the email's `thread_id`, so it goes through show → approve → send.
+    - **Forwards:** Gmail has no forward drafts, so `gmail_forward_email` now only *prepares* a forward in the draft store, with its own ID (`fwd-1`, `fwd-2`, …) and kind `forward`. It's shown ("Forward of email m-1 / To: …"), approved and sent like any draft. `gmail_execute_draft` calls Gmail's forward action for this kind. Discarding a prepared forward never touches Gmail.
+    - **Store change:** the store gained `kind` and `message_id` columns, with a migration for older databases.
+    - **Verified:**
+      - no reply tool exists
+      - a reply is a draft on its thread
+      - forwarding calls nothing in Gmail until it's approved
+      - an approved forward goes out through Gmail's forward action and is marked sent
+      - an unapproved forward is refused
+      - a prepared forward can be discarded
+      - an old store migrates
 
 ### P21: Reminders drift after DST in zero-offset timezones
 - **Where:** [server/services/triggers/utils.py:104](server/services/triggers/utils.py#L104)

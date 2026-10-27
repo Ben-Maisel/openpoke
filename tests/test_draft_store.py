@@ -171,3 +171,42 @@ async def test_failed_or_id_less_drafts_are_not_recorded(fake_llm, fake_gmail, m
                            calls(("gmail_delete_draft", {"draft_id": "unknown"})), reply("Hmm"))
     await ExecutionAgentRuntime(agent.id).execute("Draft it")
     assert get_draft_store().list_drafts() == []
+
+
+def test_stores_from_before_forwards_are_migrated(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "drafts.db"
+    with sqlite3.connect(path) as conn:  # the original table, without kind/message_id
+        conn.execute("""CREATE TABLE drafts (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, recipient TEXT NOT NULL,
+                        cc TEXT NOT NULL DEFAULT '[]', bcc TEXT NOT NULL DEFAULT '[]', subject TEXT NOT NULL,
+                        body TEXT NOT NULL, thread_id TEXT, status TEXT NOT NULL DEFAULT 'open',
+                        created_at TEXT NOT NULL, shown_at TEXT, approved_at TEXT, approval_text TEXT, sent_at TEXT)""")
+        conn.execute("INSERT INTO drafts (id, agent_id, recipient, subject, body, created_at) "
+                     "VALUES ('r-1', 'a1', 'a@x.com', 's', 'b', '2026-10-27T09:00:00+00:00')")
+    store = DraftStore(path)
+    assert (store.get("r-1").kind, store.get("r-1").message_id) == ("email", None)
+    assert store.record_forward(agent_id="a1", message_id="m-1", recipient="b@x.com").id == "fwd-1"
+
+
+def test_forward_ids_count_up_and_render_without_a_note(store):
+    first = store.record_forward(agent_id="a1", message_id="m-1", recipient="b@x.com")
+    record(store, "r-1")
+    second = store.record_forward(agent_id="a2", message_id="m-2", recipient="c@x.com", note="See below")
+    assert (first.id, second.id) == ("fwd-1", "fwd-2")
+    assert first.render() == "Forward of email m-1\nTo: b@x.com\n\n(no note)"
+    assert (second.kind, second.status, second.subject) == ("forward", "open", "")
+
+
+@pytest.mark.usefixtures("clean_state")
+async def test_a_worker_can_discard_a_forward_it_prepared(fake_llm, fake_gmail):
+    agent = get_agent_registry().create("Forward to Jake")
+    fake_llm.for_execution(
+        calls(("gmail_forward_email", {"message_id": "m-1", "recipient_email": "jake@law.com"})),
+        calls(("gmail_delete_draft", {"draft_id": "fwd-1"})),
+        reply("Discarded"),
+    )
+    await ExecutionAgentRuntime(agent.id).execute("Forward it, actually no")
+    assert get_draft_store().get("fwd-1").status == "deleted"
+    assert get_agent_registry().facts(agent.id)["draft"] == []
+    assert fake_gmail.actions == []

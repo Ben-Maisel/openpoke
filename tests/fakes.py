@@ -244,10 +244,6 @@ class FakeGmail:
         self.sent.append({"kind": "draft", **draft})
         return {"successful": True, "data": {"id": f"sent-{draft['id']}"}}
 
-    def _handle_gmail_reply_to_thread(self, args):
-        self.sent.append({"kind": "reply", **args})
-        return {"successful": True, "data": {"id": f"sent-{len(self.sent)}"}}
-
     def _handle_gmail_forward_message(self, args):
         self.sent.append({"kind": "forward", **args})
         return {"successful": True, "data": {"id": f"sent-{len(self.sent)}"}}

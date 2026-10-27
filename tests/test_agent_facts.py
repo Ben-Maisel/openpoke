@@ -39,11 +39,14 @@ def test_sent_or_deleted_drafts_are_no_longer_open(tool):
     assert removed(tool, {"draft_id": "r-1"}, {"successful": True}) == {"draft": ["r-1"]}
 
 
-def test_reply_and_forward_record_who_was_written_to():
-    assert added("gmail_reply_to_thread", {"thread_id": "t-1", "recipient_email": "ben@figma.com", "message_body": "x"},
-                 {"successful": True}) == {"email": ["ben@figma.com"], "thread": ["t-1"]}
+def test_reply_drafts_and_prepared_forwards_record_who_and_stay_open():
+    assert added("gmail_create_draft", {"thread_id": "t-1", "recipient_email": "ben@figma.com", "subject": "Re: x",
+                                        "body": "x"},
+                 {"successful": True, "data": {"id": "r-3"}}) == {"email": ["ben@figma.com"], "thread": ["t-1"],
+                                                                  "draft": ["r-3"]}
     assert added("gmail_forward_email", {"message_id": "m-1", "recipient_email": "Jake <jake@law.com>"},
-                 {"successful": True}) == {"email": ["jake@law.com"], "person": ["Jake"]}
+                 {"successful": True, "data": {"id": "fwd-1"}}) == {"email": ["jake@law.com"], "person": ["Jake"],
+                                                                    "draft": ["fwd-1"]}
 
 
 def test_search_results_record_senders_and_threads():

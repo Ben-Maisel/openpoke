@@ -43,14 +43,14 @@ def extract_facts(tool_name: str, arguments: Dict[str, Any], result: Any) -> Fac
         return changes
     args = arguments or {}
 
-    if tool_name in ("gmail_create_draft", "gmail_reply_to_thread"):
+    if tool_name == "gmail_create_draft":
         _add_addresses(changes, [args.get("recipient_email"), *_as_list(args.get("cc")),
                                  *_as_list(args.get("bcc")), *_as_list(args.get("extra_recipients"))])
         changes.added("thread", [args.get("thread_id")])
-        if tool_name == "gmail_create_draft":
-            changes.added("draft", [draft_id(result)])
-    elif tool_name == "gmail_forward_email":
+        changes.added("draft", [draft_id(result)])
+    elif tool_name == "gmail_forward_email":  # a prepared forward is an open draft until sent
         _add_addresses(changes, [args.get("recipient_email")])
+        changes.added("draft", [draft_id(result)])
     elif tool_name in ("gmail_execute_draft", "gmail_delete_draft"):
         changes.removed("draft", [args.get("draft_id")])  # sent or deleted: no longer open
     elif tool_name == "task_email_search" and isinstance(result, list):

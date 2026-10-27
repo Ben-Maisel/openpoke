@@ -1,9 +1,11 @@
-"""Draft store: the exact text of every email draft, and where it is in its approval (P16, P20).
+"""Draft store: the exact text of every outgoing email, and where it is in its approval (P16, P20).
 
-Drafts are recorded by code when a worker's `gmail_create_draft` succeeds, so what the
-user is shown, approves, and sends is always the stored text, never an LLM's retelling.
-A draft moves open -> shown -> approved -> sent, or to deleted before it is sent, and
-the store refuses any other move.
+Every email that leaves goes through here. An `email` draft is recorded by code when a
+worker's `gmail_create_draft` succeeds (replies are drafts on a thread); a `forward` is
+prepared by `gmail_forward_email` (Gmail has no forward drafts, so it lives only here).
+What the user is shown, approves, and sends is always the stored text, never an LLM's
+retelling. A draft moves open -> shown -> approved -> sent, or to deleted before it is
+sent, and the store refuses any other move.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from ...config import DATA_DIR
 from ...logging_config import logger
 
 STATUSES = ("open", "shown", "approved", "sent", "deleted")
+KINDS = ("email", "forward")
 
 # Which statuses each move may start from
 _ALLOWED_FROM = {
@@ -55,9 +58,14 @@ class DraftRecord:
     approved_at: Optional[str]
     approval_text: Optional[str]
     sent_at: Optional[str]
+    kind: str = "email"
+    message_id: Optional[str] = None  # the email a forward sends on
 
     def render(self) -> str:
         """The draft as the user sees it."""
+        if self.kind == "forward":
+            note = self.body or "(no note)"
+            return f"Forward of email {self.message_id}\nTo: {self.recipient}\n\n{note}"
         lines = [f"To: {self.recipient}"]
         if self.cc:
             lines.append(f"Cc: {', '.join(self.cc)}")
@@ -106,6 +114,11 @@ class DraftStore:
                 CREATE INDEX IF NOT EXISTS idx_drafts_agent ON drafts (agent_id, status);
                 """
             )
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(drafts)")}
+            if "kind" not in columns:  # stores created before forwards were gated
+                conn.execute("ALTER TABLE drafts ADD COLUMN kind TEXT NOT NULL DEFAULT 'email'")
+            if "message_id" not in columns:
+                conn.execute("ALTER TABLE drafts ADD COLUMN message_id TEXT")
 
     def _timestamp(self) -> str:
         return self._now().isoformat(timespec="seconds")
@@ -138,6 +151,21 @@ class DraftStore:
                  subject, body, thread_id, self._timestamp()),
             )
         logger.info("recorded draft", extra={"draft_id": draft_id, "agent_id": agent_id})
+        return self.get(draft_id)  # type: ignore[return-value]
+
+    def record_forward(self, *, agent_id: str, message_id: str, recipient: str, note: str = "") -> DraftRecord:
+        """Prepare a forward of an existing email; it gets its own ID (fwd-1, fwd-2, ...) and starts open."""
+        with self._lock, closing(self._connect()) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM drafts WHERE kind = 'forward'").fetchone()[0]
+            draft_id = f"fwd-{count + 1}"
+            conn.execute(
+                """
+                INSERT INTO drafts (id, agent_id, recipient, subject, body, kind, message_id, created_at)
+                VALUES (?, ?, ?, '', ?, 'forward', ?, ?)
+                """,
+                (draft_id, agent_id, recipient, note, message_id, self._timestamp()),
+            )
+        logger.info("prepared forward", extra={"draft_id": draft_id, "agent_id": agent_id})
         return self.get(draft_id)  # type: ignore[return-value]
 
     def get(self, draft_id: str) -> Optional[DraftRecord]:
@@ -200,7 +228,7 @@ def _to_record(row: sqlite3.Row) -> DraftRecord:
         cc=tuple(json.loads(row["cc"])), bcc=tuple(json.loads(row["bcc"])),
         subject=row["subject"], body=row["body"], thread_id=row["thread_id"], status=row["status"],
         created_at=row["created_at"], shown_at=row["shown_at"], approved_at=row["approved_at"],
-        approval_text=row["approval_text"], sent_at=row["sent_at"],
+        approval_text=row["approval_text"], sent_at=row["sent_at"], kind=row["kind"], message_id=row["message_id"],
     )
 
 
@@ -217,4 +245,4 @@ def get_draft_store() -> DraftStore:
     return _draft_store
 
 
-__all__ = ["DraftRecord", "DraftStateError", "DraftStore", "STATUSES", "get_draft_store"]
+__all__ = ["DraftRecord", "DraftStateError", "DraftStore", "KINDS", "STATUSES", "get_draft_store"]

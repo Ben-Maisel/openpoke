@@ -68,7 +68,7 @@ def _reply(args: Dict[str, Any], result: Any, ref: str) -> str:
 
 def _forward(args: Dict[str, Any], result: Any, ref: str) -> str:
     note = f"\n{args['additional_text']}" if args.get("additional_text") else ""
-    return f"forwarded email {args.get('message_id')} to {args.get('recipient_email')}{note}"
+    return f"forward {draft_id(result)} of email {args.get('message_id')} to {args.get('recipient_email')}{note}"
 
 
 def _trigger_line(trigger: Dict[str, Any], payload: Any = None) -> str:
