@@ -50,3 +50,4 @@ server/plans/
 
 # Routing eval scratch runs (the baseline and later comparison runs are committed)
 evals/results/smoke/
+evals/results/smoke-memory/
