@@ -41,7 +41,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 | ID | Problem | Area | Severity | Status |
 |---|---|---|---|---|
-| P1 | Roster stores bare names only, with no description or metadata | A | High | 🔴 Open |
+| P1 | Roster stores bare names only, with no description or metadata | A | High | 🟡 In progress |
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🔴 Open |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🔴 Open |
@@ -77,6 +77,16 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/execution/roster.py](server/services/execution/roster.py), [server/agents/interaction_agent/agent.py:45](server/agents/interaction_agent/agent.py#L45)
 - **What:** `roster.json` is a list of strings. The interaction agent sees `<agent name="..." />` and nothing else: no purpose, people or threads involved, last-used time, pending drafts, or active reminders.
 - **Why it matters:** routing decisions are guesses based on a name the LLM itself invented weeks ago.
+- **Agreed design (with P2/P4):**
+  - **Identity:** every agent gets a stable, short, sequential ID (`a17`), assigned once and never reused. The name is only a label.
+  - **Card:** each agent has a card made of a short LLM-written summary of its history, refreshed after each run, plus facts recorded by code from its tool calls (emails, people, threads, drafts, triggers).
+  - **Routing (P2/P4):** the interaction agent sees a hot cache of the ~5 most recently used agents plus a shortlist of ~5 search matches over names, cards and facts, all in one prompt, with a `search_agents` tool as a fallback. Creating an agent is an explicit action that checks for likely duplicates first.
+- **Progress:**
+  - [x] **P1a: the registry.** `server/services/execution/registry.py`: SQLite-backed `AgentRegistry` holding agents (ID, name, summary, status, created / last used, run count) and their facts, validated by kind. IDs come from SQLite `AUTOINCREMENT`, so they are never reused, even after a delete or clear. `tests/test_agent_registry.py`, 27 tests. Not yet used by the app.
+  - [ ] P1b: switch agent memory and triggers to IDs; the interaction agent still routes by name until P4
+  - [ ] P1c: record facts from tool calls
+  - [ ] P1d: refresh the card summary after each run
+  - [ ] P1e: one-time import of existing roster and memory files
 - **Solution:** —
 
 ### P2: Entire roster injected into every prompt
