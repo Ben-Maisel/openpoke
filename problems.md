@@ -47,7 +47,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟢 Solved |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
-| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🟡 Lanes and email urgency done; evaluation next |
+| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🟢 Solved |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
 | P9 | One global result batch: fast tasks wait for unrelated slow ones | D | High | 🔴 Open |
 | P10 | The same execution agent can run twice concurrently | D | Medium | 🟢 Solved |
@@ -309,7 +309,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/gmail/importance_watcher.py:200-207](server/services/gmail/importance_watcher.py#L200-L207), [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py)
 - **What:** each important email triggers its own interaction-agent turn and user message. Each trigger firing also messages the user, even when there's nothing new to say. There is no batching, digest, priority, or quiet hours.
 - **Why it matters:** this is the user-facing side of agent overload; more agents mean more interruptions.
-- **Solution (in progress):** notification lanes, decided in code ([notifications.py](server/services/notifications.py)).
+- **Solution:** notification lanes, decided in code ([notifications.py](server/services/notifications.py)).
   - **Three lanes for everything the user didn't just ask for:**
     - **now:** delivered at once, as its own message
     - **digest:** held, then delivered together as **one** message (one interaction turn) once the oldest update has waited `digest_interval_minutes` (default 60), and never during `quiet_hours` (default 22:00–07:00, local time)
@@ -336,7 +336,18 @@ Each step builds on the previous ones. Related problems that touch the same code
       - unclear or malformed answers never interrupting
       - an outage surfacing nothing
       - urgent emails routed to **now** and the rest to the **digest**
-  - **Next:** a "day in the life" measurement, and a small real-model urgency eval.
+  - **Evaluated two ways:**
+    - **A day in the life** ([evals/notifications/day.py](evals/notifications/day.py), deterministic, no LLM).
+      - One scripted day of 33 events: 15 emails (3 urgent, 7 important, 5 unimportant), 2 reminders, and an hourly background check that finds news once. It runs minute by minute through the real notification center.
+      - **Messages to the user fell from 28 to 11.** 5 interrupt at once (the 2 reminders and the 3 urgent emails, each delivered the minute it happened). The other 6 are digests.
+      - The 15 "nothing new" checks never reach the user. Digest items waited at most an hour during the day, and the 22:30 email waited for 07:00.
+      - The numbers are pinned by tests. [Report](evals/results/notifications-day/report.md).
+      - **Note:** with sparse events, several digests hold a single item. A fixed delivery schedule (say 9:00, 13:00 and 17:00) would batch more, at the cost of longer waits. The interval is one setting.
+    - **Urgency** ([evals/notifications/urgency.py](evals/notifications/urgency.py), real model, Haiku 5.5).
+      - 24 labelled emails (8 urgent, 8 important, 8 not important), each judged 3 times by the app's own classifier, for 72 judgements costing $0.015.
+      - **0 of 24 urgent judgements missed, and 0 of 48 false interrupts.** That includes the "today only 40% off" marketing trap. Exact lane: 96%.
+      - The 3 errors are one email, a checkup *confirmation*, judged not important every time. That comes from the classifier's original importance bar ("ignore low-impact status notifications"), not the new urgency judgement. It's arguably right, so I left the prompt as is rather than tune it to the test.
+      - Results are logged and resumable like the other evals, and API errors are recorded and retried instead of being scored as "not important". [Report](evals/results/notifications-urgency/report.md).
 
 ## D. Reliability
 

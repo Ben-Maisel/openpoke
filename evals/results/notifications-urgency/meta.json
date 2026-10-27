@@ -1,0 +1,11 @@
+{
+  "label": "notifications-urgency",
+  "identity": {
+    "model": "anthropic/claude-haiku-5.5",
+    "dataset_sha": "dd5429a6586a7bde",
+    "classifier_sha": "fd4e60debef456dd"
+  },
+  "repeats": 3,
+  "git_commit": "306e8515c75547211cd4141e65ecc95c6c2ccd0f",
+  "git_dirty": true
+}
