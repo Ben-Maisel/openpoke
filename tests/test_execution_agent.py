@@ -169,11 +169,22 @@ async def test_agent_memory_keeps_full_tool_results(fake_llm, fake_gmail, agent)
     assert "Draft number 4" in stored
 
 
-@pytest.mark.xfail(strict=True, reason="P17: Gmail actions are logged under a shared 'gmail-execution-agent' name")
-async def test_gmail_actions_are_logged_only_under_the_acting_agent(fake_llm, fake_gmail, agent):
-    fake_llm.for_execution(calls(("gmail_create_draft", DRAFT_ARGS)), reply("Drafted"))
-    await ExecutionAgentRuntime(agent.id).execute("Draft it")
-    assert "gmail-execution-agent" not in get_execution_agent_logs().list_agents()
+async def test_gmail_and_search_actions_are_logged_only_under_the_acting_agent(fake_llm, fake_gmail, agent):
+    fake_gmail.add_email("m-1", subject="Lunch Friday?", sender="Alice <alice@example.com>", body="Noon?")
+    fake_llm.for_execution(
+        calls(("gmail_create_draft", DRAFT_ARGS)),
+        calls(("task_email_search", {"search_query": "lunch with Alice"})),
+        reply("Done"),
+    )
+    fake_llm.for_search(
+        calls(("gmail_fetch_emails", {"query": "from:alice"})),
+        calls(("return_search_results", {"message_ids": ["m-1"]})),
+    )
+    await ExecutionAgentRuntime(agent.id).execute("Draft it, then find her lunch email")
+
+    assert get_execution_agent_logs().list_agents() == [agent.id]
+    actions = [payload for tag, payload in history(agent.id) if tag == "agent_action"]
+    assert [a.split(" with")[0] for a in actions] == ["Calling gmail_create_draft", "Calling task_email_search"]
 
 
 # --- Safety (P20) ----------------------------------------------------------

@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Callable, Dict, List, Optional
 
-from server.services.execution import get_execution_agent_logs
 from server.services.gmail import execute_gmail_tool, get_active_gmail_user_id
-
-_GMAIL_AGENT_NAME = "gmail-execution-agent"
 
 _SCHEMAS: List[Dict[str, Any]] = [
     {
@@ -311,9 +307,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
     },
 ]
 
-_LOG_STORE = get_execution_agent_logs()
-
-
 # Return Gmail tool schemas
 def get_schemas() -> List[Dict[str, Any]]:
     """Return Gmail tool schemas."""
@@ -321,26 +314,12 @@ def get_schemas() -> List[Dict[str, Any]]:
     return _SCHEMAS
 
 
-# Execute a Gmail tool and record the action for the execution agent journal
+# Execute a Gmail tool; the calling agent's runtime records it in that agent's own journal
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a Gmail tool and record the action for the execution agent journal."""
+    """Execute a Gmail tool with the None-valued arguments dropped."""
 
     payload = {k: v for k, v in arguments.items() if v is not None}
-    payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
-    try:
-        result = execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
-    except Exception as exc:
-        _LOG_STORE.record_action(
-            _GMAIL_AGENT_NAME,
-            description=f"{tool_name} failed | args={payload_str} | error={exc}",
-        )
-        raise
-
-    _LOG_STORE.record_action(
-        _GMAIL_AGENT_NAME,
-        description=f"{tool_name} succeeded | args={payload_str}",
-    )
-    return result
+    return execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
 
 
 # Create a Gmail draft via Composio with support for HTML, attachments, and threading

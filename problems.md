@@ -57,7 +57,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🟢 Solved |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
 | P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🔴 Open |
-| P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🔴 Open |
+| P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🟢 Solved |
 | P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
@@ -352,7 +352,8 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P17: Gmail and search actions logged under the wrong name
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py), [server/agents/execution_agent/tasks/search_email/tool.py](server/agents/execution_agent/tasks/search_email/tool.py)
 - **What:** Gmail actions are written to a fixed `gmail-execution-agent` log and searches to `task_email_search`. These are phantom logs not tied to the agent that acted.
-- **Solution:** —
+- **Solution:** deleted the phantom writes. The execution runtime already records every tool call and result in the acting agent's own journal, so the extra files were duplicates nobody read, growing without bound. The search task's internal queries still go to the server log (`logger.info`) for debugging.
+  - **Verified:** the strict expected failure became a real test. One run drafts an email and then searches. Afterwards the only journal on disk is the acting agent's, and it holds both calls. Against the old code, the test fails, showing both phantom logs.
 
 ### P18: Polling instead of push
 - **Where:** [web/app/page.tsx](web/app/page.tsx)

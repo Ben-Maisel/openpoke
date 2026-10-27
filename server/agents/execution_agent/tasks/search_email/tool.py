@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from server.config import get_settings
 from server.logging_config import logger
 from server.openrouter_client import request_chat_completion
-from server.services.execution import get_execution_agent_logs
 from server.services.gmail import (
     EmailTextCleaner,
     ProcessedEmail,
@@ -40,9 +39,7 @@ ERROR_TOOL_ARGUMENTS_INVALID = "Tool arguments must be an object"
 ERROR_ITERATION_LIMIT = "Email search orchestrator exceeded iteration limit"
 
 
-
 _COMPLETION_TOOL_SCHEMA = get_completion_schema()
-_LOG_STORE = get_execution_agent_logs()
 _EMAIL_CLEANER = EmailTextCleaner(max_url_length=40)
 
 
@@ -199,7 +196,7 @@ async def _run_email_search(
         logger.error(f"[EMAIL_SEARCH] {ERROR_ITERATION_LIMIT}")
         raise RuntimeError(ERROR_ITERATION_LIMIT)
     
-    final_result = _build_response(queries, emails, selected_ids or [])
+    final_result = _build_response(emails, selected_ids or [])
     unique_queries = list(dict.fromkeys(queries))
     logger.info(f"[EMAIL_SEARCH] Completed - {len(unique_queries)} queries executed, {len(final_result)} emails selected")
     return final_result
@@ -306,11 +303,6 @@ async def _perform_search(
         "metadata_headers": ["From", "To", "Subject", "Date"],  # Ensure we get key headers
     }
 
-    _LOG_STORE.record_action(
-        TASK_TOOL_NAME,
-        description=f"{TASK_TOOL_NAME} search | query={query} | max_results={max_results}",
-    )
-
     try:
         raw_result = execute_gmail_tool(
             "GMAIL_FETCH_EMAILS",
@@ -346,15 +338,11 @@ async def _perform_search(
     )
 
 
-# Build final response with selected emails and logging
+# Build final response with the selected emails
 def _build_response(
-    queries: List[str],
     emails: Dict[str, GmailSearchEmail],
     selected_ids: Sequence[str],
 ) -> List[Dict[str, Any]]:
-    # Deduplicate queries while preserving order
-    unique_queries = list(dict.fromkeys(queries))
-    
     # Deduplicate and filter valid email IDs efficiently
     valid_ids = [id.strip() for id in selected_ids if id and id.strip()]
     unique_ids = list(dict.fromkeys(valid_ids))
@@ -366,14 +354,6 @@ def _build_response(
         logger.warning(f"[EMAIL_SEARCH] {len(missing_ids)} selected email IDs not found")
     
     payload = TaskEmailSearchPayload(emails=selected_emails)
-    
-    _LOG_STORE.record_action(
-        TASK_TOOL_NAME,
-        description=(
-            f"{TASK_TOOL_NAME} completed | queries={len(unique_queries)} "
-            f"| emails={len(selected_emails)}"
-        ),
-    )
     
     return [email.model_dump(exclude_none=True) for email in payload.emails]
 
