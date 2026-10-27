@@ -95,6 +95,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/interaction_agent/tools.py:117](server/agents/interaction_agent/tools.py#L117), [server/services/execution/log_store.py:19](server/services/execution/log_store.py#L19)
 - **What:** reuse happens only if the LLM retypes an existing name exactly (case-sensitive). "Lunch with Alice" and "Alice lunch" become two agents, and the new one has no memory. Separately, names that differ only in case or punctuation ("Email to Alice" and "email to alice!") are separate roster entries but slugify to the **same log file**, so they share one memory.
 - **Why it matters:** follow-ups such as "send it" can reach an agent that doesn't know the draft. Duplicates also feed P2 and P3.
+- **Measured:** with two such duplicates per case, routing accuracy falls from 98–100% to 62–68%, and explicit follow-ups fall to roughly chance (see the messy-roster baseline under P13). Roster size barely matters; duplicates do.
 - **Solution:** —
 
 ## B. Worker overload
@@ -221,6 +222,11 @@ Each step builds on the previous ones. Related problems that touch the same code
       - **Two misses:**
         - a reuse the prompt itself invites (`new-leaking-sink`), with the label deliberately left unchanged after seeing results
         - a draft rewritten by the interaction agent, now tracked as P27
+    - [x] **Messy-roster baseline.** Results are in `evals/results/baseline-messy/`: the same cases, plus two realistic duplicate agents per case of the kind P4 creates. $0.18.
+      - **Overall accuracy drops to 62–68% at every roster size.**
+      - **Implicit follow-ups stay at 100%**, because the history names the real agent.
+      - **Explicit follow-ups (10–30%) and disambiguation (0–33%) fall to roughly chance** (1 in 3). With names alone there is no way to tell which duplicate holds the context.
+      - **Conclusion:** the damage comes from roster *quality* (duplicates with no distinguishing information), not roster *size*.
 - **Solution:** a three-tier quality system.
   - **About 420 deterministic tests run in CI** on Linux and Windows. They use fake LLM and Gmail doubles and cover unit, component and end-to-end flows. Known bugs are pinned as strict expected failures.
   - **A logged, resumable real-model routing eval** (`python -m evals.routing`) has its own CI-tested harness and a fixed, reviewed dataset, and its baseline is committed.
