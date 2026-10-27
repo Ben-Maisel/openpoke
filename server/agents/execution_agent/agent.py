@@ -1,10 +1,11 @@
 """Execution Agent implementation."""
 
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Mapping, Optional, Dict, Any, Sequence
 
+from ...config import get_settings
 from ...services.execution import get_execution_agent_logs
-from .memory import render_history
+from .memory import render_facts, render_recent_history
 from ...logging_config import logger
 
 
@@ -33,13 +34,14 @@ Be thorough, accurate, and efficient in your execution."""
 class ExecutionAgent:
     """Manages state and history for an execution agent."""
 
-    # Initialize execution agent with its ID, display name, conversation limits, and log store access
+    # Initialize execution agent with its ID, display name, card (summary and facts), and log store access
     def __init__(
         self,
         agent_id: str,
         name: str,
         summary: str = "",
-        conversation_limit: Optional[int] = None
+        facts: Optional[Mapping[str, Sequence[str]]] = None,
+        history_token_budget: Optional[int] = None,
     ):
         """
         Initialize an execution agent.
@@ -48,44 +50,42 @@ class ExecutionAgent:
             agent_id: Stable registry ID (e.g., 'a17'); memory is stored under it
             name: Human-readable agent name (e.g., 'conversation with keith')
             summary: The agent's card summary (what it handles and where things stand)
-            conversation_limit: Optional limit on past conversations to include (None = all)
+            facts: The agent's recorded facts (open drafts, live reminders, threads, people)
+            history_token_budget: How much recent history to show (defaults to the setting)
         """
         self.agent_id = agent_id
         self.name = name
         self.summary = summary
-        self.conversation_limit = conversation_limit
+        self.facts = facts or {}
+        self.history_token_budget = history_token_budget or get_settings().execution_history_token_budget
         self._log_store = get_execution_agent_logs()
 
-    # Generate system prompt template with the agent's name and its card summary as its purpose
+    # Generate system prompt template with the agent's name, its card summary as its purpose, and its facts
     def build_system_prompt(self) -> str:
         """Build the system prompt for this agent."""
         agent_purpose = self.summary or f"Handle tasks related to: {self.name}"
 
         return SYSTEM_PROMPT_TEMPLATE.format(
             agent_name=self.name,
-            agent_purpose=agent_purpose
+            agent_purpose=agent_purpose,
+            agent_facts=render_facts(self.facts),
         )
 
-    # Combine base system prompt with conversation history, applying conversation limits
+    # Combine base system prompt with the most recent runs that fit the history budget
     def build_system_prompt_with_history(self) -> str:
         """
         Build system prompt including agent history.
 
         Returns:
-            System prompt with embedded history transcript
+            System prompt with the recent history transcript (older runs are covered by the card)
         """
         base_prompt = self.build_system_prompt()
 
         entries = list(self._log_store.iter_entries(self.agent_id))
 
         if entries:
-            # Apply conversation limit if needed: keep the last N requests and everything after them
-            if self.conversation_limit and self.conversation_limit > 0:
-                starts = [i for i, (tag, _, _) in enumerate(entries) if tag == "agent_request"]
-                if len(starts) > self.conversation_limit:
-                    entries = entries[starts[-self.conversation_limit]:]
-
-            return f"{base_prompt}\n\n# Execution History\n\n{render_history(entries)}"
+            history = render_recent_history(entries, self.history_token_budget)
+            return f"{base_prompt}\n\n# Execution History\n\n{history}"
 
         return base_prompt
 

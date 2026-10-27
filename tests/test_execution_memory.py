@@ -138,3 +138,80 @@ def test_journals_written_before_digests_still_render():
 
 def test_empty_history_renders_nothing():
     assert render_history([]) == ""
+
+
+# --- Budgeted history (P5) ---------------------------------------------------------
+
+from server.agents.execution_agent.memory import CHARS_PER_TOKEN, render_facts, render_recent_history, split_runs  # noqa: E402
+
+
+def run(i, size=0):
+    return [("agent_request", "t", f"request {i}"), ("agent_response", "t", f"done {i}" + "x" * size)]
+
+
+def journal(n, size=0):
+    return [entry for i in range(n) for entry in run(i, size)]
+
+
+def test_runs_end_at_each_response_and_trailing_entries_are_in_progress():
+    trigger_run = [("tool_call", "t", "{}"), ("agent_response", "t", "reminded")]  # fired by a trigger: no request
+    entries = run(0) + trigger_run + [("agent_request", "t", "current")]
+    runs, in_progress = split_runs(entries)
+    assert runs == [run(0), trigger_run]
+    assert in_progress == [("agent_request", "t", "current")]
+
+
+def test_short_history_is_shown_whole_without_a_marker():
+    text = render_recent_history(journal(3), token_budget=4000)
+    assert "earlier_runs" not in text
+    assert [f"request {i}" in text for i in range(3)] == [True] * 3
+
+
+def test_budget_keeps_the_newest_whole_runs_and_counts_the_rest():
+    # Each run renders to roughly 1,100 characters, so a 1,000-token (4,000-character) budget fits three.
+    text = render_recent_history(journal(10, size=1000), token_budget=1000)
+    lines = text.splitlines()
+    assert lines[0] == '<earlier_runs count="7">Not shown. Your card above summarizes them.</earlier_runs>'
+    assert [line.split(">")[1].split("<")[0] for line in lines[1::2]] == ["request 7", "request 8", "request 9"]
+    assert all(line.startswith("<agent_response") for line in lines[2::2])  # no run is cut in half
+
+
+def test_the_latest_run_is_always_shown_even_when_it_alone_exceeds_the_budget():
+    text = render_recent_history(journal(3, size=10_000), token_budget=100)
+    assert text.splitlines()[0].startswith('<earlier_runs count="2">')
+    assert "request 2" in text and "request 1" not in text
+
+
+def test_the_run_in_progress_is_always_shown():
+    entries = journal(5, size=5_000) + [("agent_request", "t", "the current request")]
+    text = render_recent_history(entries, token_budget=100)
+    assert text.endswith('<agent_request timestamp="t">the current request</agent_request>')
+    assert "request 4" in text
+
+
+def test_prompt_history_stays_flat_however_long_the_journal_grows():
+    budget = 4000
+    texts = {n: render_recent_history(journal(n, size=300), budget) for n in (20, 200, 2000)}
+    assert texts[200].count("<agent_request") == texts[2000].count("<agent_request") < 200
+    assert all(len(text) <= budget * CHARS_PER_TOKEN + 100 for text in texts.values())
+
+
+def test_facts_render_as_labelled_lines_in_a_fixed_order():
+    facts = {"email": ["alice@x.com"], "draft": ["r-1", "r-2"], "trigger": ["4"], "thread": [], "person": ["Alice"]}
+    assert render_facts(facts).splitlines() == [
+        "- Open drafts: r-1, r-2",
+        "- Live reminders: 4",
+        "- People: Alice",
+        "- Email addresses: alice@x.com",
+    ]
+
+
+def test_no_facts_says_so():
+    assert render_facts({}) == "None recorded yet."
+    assert render_facts({"draft": []}) == "None recorded yet."
+
+
+def test_long_fact_lists_are_capped():
+    line = render_facts({"email": [f"p{i:03}@x.com" for i in range(MAX_LISTED + 5)]})
+    assert line.endswith("p019@x.com (+5 more)")
+    assert line.count("@") == MAX_LISTED

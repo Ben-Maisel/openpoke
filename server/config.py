@@ -94,6 +94,9 @@ class Settings(BaseModel):
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
 
+    # How much of its own past runs an execution agent sees in its prompt (estimated tokens)
+    execution_history_token_budget: int = Field(default=_env_int("OPENPOKE_EXECUTION_HISTORY_TOKENS", 4000))
+
     @property
     def cors_allow_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""

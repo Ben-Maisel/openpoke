@@ -10,15 +10,18 @@ from ...logging_config import logger
 from ...openrouter_client import request_chat_completion
 from ...services.execution import get_agent_registry
 
-MAX_SUMMARY_CHARS = 300
+MAX_SUMMARY_CHARS = 600
 
 CARD_SYSTEM_PROMPT = (
     "You maintain a status card for one background worker of a personal assistant. The assistant reads "
     "these cards to decide which worker should handle a new request, so the card must say what this worker "
-    "is for and where things stand.\n"
-    "Write at most two sentences (under 250 characters): the worker's topic, the current state, and anything "
-    "still open (drafts awaiting approval, replies being waited on, scheduled reminders). Keep concrete names, "
-    "people, dates, and IDs. Plain text only, no preamble."
+    "is for and where things stand. The worker also reads its own card as its long-term memory: its prompt "
+    "only shows its most recent runs, so anything older survives only through this card.\n"
+    "Write at most four sentences (under 550 characters): the worker's topic, the current state, anything "
+    "still open (drafts awaiting approval, replies being waited on, scheduled reminders), and what earlier "
+    "runs settled that still matters (decisions, what was sent, the user's stated preferences). Carry those "
+    "forward from the previous card unless the latest run changed them. Keep concrete names, people, dates, "
+    "and IDs. Plain text only, no preamble."
 )
 
 # Keep references so fire-and-forget refreshes aren't garbage-collected mid-flight

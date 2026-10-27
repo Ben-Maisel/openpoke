@@ -22,6 +22,8 @@ When searching for personal information about the user, it's probably smart to l
 
 Agent Name: {agent_name}
 Your card (what you handle and where things stand): {agent_purpose}
+What you have on record (exact IDs and addresses from your past tool calls):
+{agent_facts}
 
 # Available Tools
 You have access to the following Gmail tools:

@@ -45,7 +45,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟢 Solved |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
-| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
+| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟡 Mostly solved (recall tool and eval pending) |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
@@ -202,7 +202,20 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/execution_agent/agent.py:63](server/agents/execution_agent/agent.py#L63)
 - **What:** the agent's entire log is pasted into its system prompt on every run. A `conversation_limit` parameter exists but is never set, and when set it simply drops old requests rather than summarizing them.
 - **Why it matters:** long-lived agents get slower and more expensive, and eventually overflow the context window and fail.
-- **Solution:** —
+- **Solution:** the worker's prompt now has a fixed shape, built from three parts:
+  1. **Card summary: long-term memory.** It's the same card the router reads, refreshed by an LLM after every run. The cap went from 300 to 600 characters, and the refresh prompt now asks it to carry forward decisions, what was sent and the user's preferences. No second summarizer is needed.
+  2. **Facts: exact IDs.** These are the open drafts, live reminders, threads, people and email addresses already recorded by code (P1c). Before this change only the router saw them; now the worker does too. Each kind is capped at 20 entries.
+  3. **Recent runs, within a token budget.** The budget defaults to 4,000 estimated tokens (`OPENPOKE_EXECUTION_HISTORY_TOKENS`).
+     - Runs are split at each agent response, so trigger-fired runs without a request count too.
+     - Newest runs are added first, whole runs only, until the budget is used.
+     - The rest are replaced by one line: `<earlier_runs count="N">`.
+     - The newest run and the request in progress are always shown, so the prompt stays bounded however long the history grows. The only possible overshoot is the size of one oversized run.
+
+  The unused `conversation_limit` parameter is removed, since the budget replaces it.
+  - **Verified:**
+    - Unit tests cover the budget keeping the newest whole runs, an oversized latest run, the request in progress, trigger runs, and history size staying flat across 20, 200 and 2,000 runs.
+    - Fact tests cover their order, the empty case and the cap.
+    - Runtime tests check two things. A worker sees "Open drafts: r-1" in its next run. With a 300-run journal, its prompt history stays within the budget, still contains its card, and shows the newest run but not the first.
 
 ### P6: Logged tool data is blindly truncated
 - **Where:** [server/agents/execution_agent/agent.py:121-123](server/agents/execution_agent/agent.py#L121-L123)

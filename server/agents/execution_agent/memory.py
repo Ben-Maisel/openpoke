@@ -3,13 +3,16 @@
 The journal on disk keeps every tool call in full. The prompt shows a digest of each one:
 the IDs, people, subjects and text the agent needs to pick up where it left off, with
 anything cut short pointing back to the full record by its reference (e.g. r3).
+
+The prompt only holds the most recent runs that fit a token budget; older runs are
+covered by the agent's card summary and its facts, which are rendered separately.
 """
 
 from __future__ import annotations
 
 import json
 from html import escape
-from typing import Any, Callable, Dict, Iterable, List, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from ...services.execution.log_store import TOOL_CALL_TAG
 from .facts import draft_id
@@ -17,6 +20,9 @@ from .facts import draft_id
 SNIPPET_CHARS = 150  # per email in a search digest
 GENERIC_CHARS = 400  # for tools without a dedicated digest
 MAX_LISTED = 20  # emails or triggers listed before "… N more"
+CHARS_PER_TOKEN = 4  # rough estimate; avoids a tokenizer dependency
+
+Entry = Tuple[str, str, str]
 
 
 def _compact(value: Any, limit: int, ref: str) -> str:
@@ -124,7 +130,7 @@ def _render_payload(tag: str, payload: str) -> str:
 
 
 # Journal entries (tag, timestamp, payload) as tagged prompt text
-def render_history(entries: Iterable[Tuple[str, str, str]]) -> str:
+def render_history(entries: Iterable[Entry]) -> str:
     parts: List[str] = []
     for tag, timestamp, payload in entries:
         text = escape(_render_payload(tag, payload), quote=False)
@@ -132,4 +138,50 @@ def render_history(entries: Iterable[Tuple[str, str, str]]) -> str:
     return "\n".join(parts)
 
 
-__all__ = ["digest_tool_call", "render_history"]
+# Split a journal into runs; a run ends with the agent's response, and anything after the last one is in progress
+def split_runs(entries: Sequence[Entry]) -> Tuple[List[List[Entry]], List[Entry]]:
+    runs: List[List[Entry]] = []
+    current: List[Entry] = []
+    for entry in entries:
+        current.append(entry)
+        if entry[0] == "agent_response":
+            runs.append(current)
+            current = []
+    return runs, current
+
+
+# The newest whole runs that fit the budget (the latest one always), plus a note about the rest
+def render_recent_history(entries: Sequence[Entry], token_budget: int) -> str:
+    runs, in_progress = split_runs(entries)
+    budget = token_budget * CHARS_PER_TOKEN - len(render_history(in_progress))
+    kept: List[str] = []
+    for run in reversed(runs):
+        text = render_history(run)
+        if kept and len(text) > budget:
+            break
+        kept.insert(0, text)
+        budget -= len(text)
+    omitted = len(runs) - len(kept)
+    parts = [f'<earlier_runs count="{omitted}">Not shown. Your card above summarizes them.</earlier_runs>'] if omitted else []
+    parts += kept
+    if in_progress:
+        parts.append(render_history(in_progress))
+    return "\n".join(parts)
+
+
+_FACT_LABELS = (("draft", "Open drafts"), ("trigger", "Live reminders"), ("thread", "Threads"),
+                ("person", "People"), ("email", "Email addresses"))
+
+
+# The agent's recorded facts as short labelled lines (each kind capped so the list stays bounded)
+def render_facts(facts: Mapping[str, Sequence[str]]) -> str:
+    lines = []
+    for kind, label in _FACT_LABELS:
+        values = list(facts.get(kind) or [])
+        if values:
+            more = f" (+{len(values) - MAX_LISTED} more)" if len(values) > MAX_LISTED else ""
+            lines.append(f"- {label}: {', '.join(values[:MAX_LISTED])}{more}")
+    return "\n".join(lines) or "None recorded yet."
+
+
+__all__ = ["digest_tool_call", "render_facts", "render_history", "render_recent_history", "split_runs"]

@@ -72,6 +72,31 @@ async def test_prompt_contains_identity_tools_and_past_history(fake_llm, fake_gm
     assert {"gmail_create_draft", "task_email_search", "createTrigger"} <= set(call.tool_names)
 
 
+async def test_worker_sees_its_own_facts_in_the_next_run(fake_llm, fake_gmail, agent):
+    fake_llm.for_execution(calls(("gmail_create_draft", DRAFT_ARGS)), reply("Drafted"), reply("ok"))
+    await ExecutionAgentRuntime(agent.id).execute("Draft it")
+    await ExecutionAgentRuntime(agent.id).execute("Anything open?")
+    system = fake_llm.calls_to(is_execution_agent)[-1].system
+    assert "- Open drafts: r-1" in system and "- Email addresses: alice@example.com" in system
+
+
+async def test_long_lived_worker_prompt_stays_bounded_and_keeps_its_card(fake_llm, fake_gmail, agent):
+    logs = get_execution_agent_logs()
+    for i in range(300):
+        logs.record_request(agent.id, f"Check for Alice's reply, round {i}")
+        logs.record_agent_response(agent.id, f"Round {i}: no reply yet. " + "Details. " * 40)
+    get_agent_registry().update_summary(agent.id, "Waiting on Alice's lunch reply; she prefers Rosa's.")
+    fake_llm.for_execution(reply("ok"))
+
+    await ExecutionAgentRuntime(agent.id).execute("Any reply?")
+
+    system = fake_llm.calls_to(is_execution_agent)[0].system
+    history = system.split("# Execution History", 1)[1]
+    assert len(history) <= 4000 * 4 + 200
+    assert "she prefers Rosa's" in system  # older runs live on through the card
+    assert '<earlier_runs count="' in history and "round 299" in history and "round 0," not in history
+
+
 async def test_new_agent_has_no_history_section(fake_llm, fake_gmail, agent):
     fake_llm.for_execution(reply("ok"))
     await ExecutionAgentRuntime(agent.id).execute("hi")
