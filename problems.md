@@ -94,7 +94,15 @@ Each step builds on the previous ones. Related problems that touch the same code
       - P4's memory-collision test now passes
       - new tests cover run counting, ID + name on results, unknown IDs, same-name agents keeping separate memories, and the trigger DB migration
       - a live end-to-end turn on Haiku registered `a1`, ran it, and created a reminder owned by `a1`
-  - [ ] P1c: record facts from tool calls
+  - [x] **P1c: facts recorded by code.** `server/agents/execution_agent/facts.py` holds `extract_facts(tool, args, result)`, a pure function returning facts to add and remove. The execution runtime applies it after every successful tool call, and a failure there never breaks a run.
+    - **Rules by tool:**
+      - drafts, replies and forwards record recipient emails, display names and threads
+      - creating a draft records it as open; sending or deleting it removes it
+      - email search records senders, recipients and threads, capped at 20 per kind
+      - active triggers are recorded; pausing or completing removes them
+      - failed calls, lookups and unknown tools record nothing
+    - **Composio's draft-ID field isn't confirmed,** so the common placements are all accepted.
+    - **Tests:** `tests/test_agent_facts.py`, 17 tests, including real runs that update the card.
   - [ ] P1d: refresh the card summary after each run
   - [ ] P1e: one-time import of existing roster and memory files
 - **Solution:** —

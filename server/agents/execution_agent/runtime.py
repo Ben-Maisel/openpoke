@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 
 from .agent import ExecutionAgent
+from .facts import extract_facts
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
@@ -109,6 +110,7 @@ class ExecutionAgentRuntime:
                     if success:
                         logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
                         record_payload = self._safe_json_dump(result)
+                        self._record_facts(tool_name, tool_args, result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
                         logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
@@ -156,6 +158,18 @@ class ExecutionAgentRuntime:
                 response=failure_text,
                 error=error_msg
             )
+
+    # Update the agent's card with facts implied by a successful tool call; never fails the run
+    def _record_facts(self, tool_name: str, arguments: Dict[str, Any], result: Any) -> None:
+        try:
+            changes = extract_facts(tool_name, arguments, result)
+            for kind, values in changes.add.items():
+                self._registry.add_facts(self.agent.agent_id, kind, values)
+            for kind, values in changes.remove.items():
+                for value in values:
+                    self._registry.remove_fact(self.agent.agent_id, kind, value)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(f"[{self.agent.name}] Failed to record facts for {tool_name}: {exc}")
 
     # Execute OpenRouter API call with system prompt, messages, and optional tool schemas
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
