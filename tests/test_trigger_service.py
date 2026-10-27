@@ -191,14 +191,29 @@ def test_resume_recurring_trigger_after_grace_period_skips_missed_runs(service, 
     assert resumed.next_trigger == "2026-10-30T13:00:00Z"
 
 
-@pytest.mark.xfail(strict=True, reason="P22: unknown statuses silently become 'active'")
-@pytest.mark.parametrize("word", ["cancelled", "canceled", "deleted", "stopped"])
-def test_unrecognised_status_does_not_leave_trigger_active(service, word):
-    # An LLM trying to cancel a reminder with a natural word must not
-    # silently leave it running.
+@pytest.mark.parametrize("word", ["cancelled", "canceled", "deleted", "stopped", "disabled"])
+def test_unrecognised_status_is_rejected_and_changes_nothing(service, word):
+    # An LLM trying to cancel a reminder with a natural word gets a clear error to retry with (P22).
     record = service.create_trigger(agent_name="a", payload="p", start_time="2026-10-27T15:00:00Z")
-    try:
-        updated = service.update_trigger(record.id, agent_name="a", status=word)
-    except ValueError:
-        return  # rejecting the word outright is acceptable
-    assert updated.status != "active"
+    with pytest.raises(ValueError, match="use 'paused' to cancel"):
+        service.update_trigger(record.id, agent_name="a", status=word)
+    assert service.list_triggers(agent_name="a")[0] == record
+
+
+def test_cancelling_a_paused_overdue_reminder_does_not_fire_it(service, clock):
+    # The P22 scenario: before the fix, "cancelled" became "active", which resumed
+    # the paused reminder and, because it was overdue, made it fire immediately.
+    record = service.create_trigger(agent_name="a", payload="Pay rent", start_time="2026-10-26T13:00:00Z")
+    service.update_trigger(record.id, agent_name="a", status="paused")
+    clock["now"] = _utc("2026-10-27T09:00:00Z")
+    with pytest.raises(ValueError):
+        service.update_trigger(record.id, agent_name="a", status="cancelled")
+    assert service.list_triggers(agent_name="a")[0].status == "paused"
+    assert service.get_due_triggers(before=clock["now"]) == []
+
+
+@pytest.mark.parametrize("bad", ["disabled", "inactive"])
+def test_creating_with_an_unrecognised_status_stores_nothing(service, bad):
+    with pytest.raises(ValueError):
+        service.create_trigger(agent_name="a", payload="p", status=bad)
+    assert service.list_triggers(agent_name="a") == []

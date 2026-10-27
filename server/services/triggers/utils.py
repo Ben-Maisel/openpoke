@@ -45,17 +45,20 @@ def resolve_timezone(timezone_name: Optional[str]) -> ZoneInfo:
 
 
 def normalize_status(status: Optional[str]) -> str:
-    """Clamp trigger status to the known set."""
+    """Validate a trigger status; no status means the default ("active").
 
-    if not status:
+    Unknown values are rejected rather than guessed: silently mapping e.g.
+    "cancelled" to "active" turned cancel requests into resumes (P22).
+    """
+
+    if status is None or not status.strip():
         return DEFAULT_STATUS
-    normalized = status.lower()
+    normalized = status.strip().lower()
     if normalized not in VALID_STATUSES:
-        logger.warning(
-            "invalid status supplied; defaulting to active",
-            extra={"status": status},
+        raise ValueError(
+            f"Invalid status {status!r}. Use one of: {', '.join(sorted(VALID_STATUSES))} "
+            "(use 'paused' to cancel a reminder)."
         )
-        return DEFAULT_STATUS
     return normalized
 
 

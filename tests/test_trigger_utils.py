@@ -48,10 +48,20 @@ def test_resolve_timezone_falls_back_to_utc(name):
 
 @pytest.mark.parametrize(
     "raw, expected",
-    [(None, "active"), ("", "active"), ("active", "active"), ("PAUSED", "paused"), ("Completed", "completed")],
+    [(None, "active"), ("", "active"), ("   ", "active"), ("active", "active"), ("PAUSED", "paused"),
+     ("Completed", "completed"), (" paused ", "paused")],
 )
 def test_normalize_status_accepts_known_values(raw, expected):
     assert normalize_status(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["cancelled", "deleted", "on", "pause", "active!"])
+def test_normalize_status_rejects_unknown_values_with_a_usable_message(raw):
+    with pytest.raises(ValueError) as error:
+        normalize_status(raw)
+    message = str(error.value)
+    assert repr(raw) in message
+    assert "active, completed, paused" in message and "use 'paused' to cancel" in message
 
 
 # --- parse_iso / parse_datetime / coerce_start_datetime -------------------

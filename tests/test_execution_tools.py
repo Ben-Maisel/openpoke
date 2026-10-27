@@ -119,6 +119,19 @@ def test_update_trigger_tool_rejects_non_integer_ids(bad_id):
     assert tools_for("Dentist")["updateTrigger"](trigger_id=bad_id) == {"error": "trigger_id must be an integer"}
 
 
+def test_trigger_status_is_limited_to_valid_values_in_the_tool_definitions():
+    schemas = {s["function"]["name"]: s["function"]["parameters"]["properties"] for s in trigger_tools.get_schemas()}
+    assert schemas["createTrigger"]["status"]["enum"] == ["active", "paused"]
+    assert schemas["updateTrigger"]["status"]["enum"] == ["active", "paused", "completed"]
+
+
+def test_update_trigger_tool_returns_a_correctable_error_for_an_unknown_status():
+    created = tools_for("Rent")["createTrigger"](payload="Pay rent", start_time="2030-01-01T09:00:00Z")
+    result = tools_for("Rent")["updateTrigger"](trigger_id=created["trigger_id"], status="cancelled")
+    assert "Invalid status 'cancelled'" in result["error"] and "use 'paused' to cancel" in result["error"]
+    assert tools_for("Rent")["listTriggers"]()["triggers"][0]["status"] == "active"
+
+
 def test_create_trigger_tool_returns_error_for_invalid_rule():
     result = tools_for("Dentist")["createTrigger"](payload="p", recurrence_rule="FREQ=SOMETIMES")
     assert "error" in result

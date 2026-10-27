@@ -62,7 +62,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
-| P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🔴 Open |
+| P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
@@ -281,7 +281,14 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/triggers/utils.py:44](server/services/triggers/utils.py#L44)
 - **What:** `normalize_status` maps any unrecognized value to `"active"`. An agent cancelling a reminder with `status="cancelled"` (or "deleted", "stopped") leaves it running, and the tool reports success. The only valid way to cancel is `"paused"`, which is documented only in the prompt.
 - **Found by:** `test_unrecognised_status_does_not_leave_trigger_active` (expected failure until fixed).
-- **Solution:** —
+- **Worse than first described:** "active" applied to a *paused* reminder counts as a resume, and if it's overdue it's rescheduled to fire immediately. So "cancel" on a paused, overdue reminder made it fire within seconds. Reproduced before fixing.
+- **Solution:** constrain the value at the source *and* validate it in code.
+  - **Tool definitions** (`server/agents/execution_agent/tools/triggers.py`): `status` is now an `enum`. `createTrigger` allows `active` / `paused`; `updateTrigger` allows `active` / `paused` / `completed`, and its description says `paused` is how to cancel.
+  - **`normalize_status`** (`server/services/triggers/utils.py`): unknown values now raise `ValueError` ("Invalid status 'cancelled'. Use one of: active, completed, paused (use 'paused' to cancel a reminder).") instead of becoming `active`. Missing or blank still means `active`, and surrounding whitespace is trimmed. Both callers validate before writing, so a rejected update changes nothing, and the tool layer passes the error back to the model to retry.
+  - **Verified:**
+    - the P22 tests pass, with their expected-failure markers removed
+    - new tests cover the exact paused-and-overdue scenario (stays paused, not due), rejected creates storing nothing, the error message wording, the enums in both tool definitions, and the tool returning a correctable error
+    - live check on Haiku 5.5: asked to "cancel my rent reminder," the agent chose `status: "paused"` on its first attempt
 
 ### P23: Recurring reminder errors are erased
 - **Where:** [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py) (`_handle_failure`)

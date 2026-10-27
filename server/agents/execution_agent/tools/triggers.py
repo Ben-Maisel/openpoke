@@ -33,7 +33,8 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     },
                     "status": {
                         "type": "string",
-                        "description": "Initial status; usually 'active' or 'paused'.",
+                        "enum": ["active", "paused"],
+                        "description": "Initial status (default 'active').",
                     },
                 },
                 "required": ["payload"],
@@ -67,7 +68,8 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     },
                     "status": {
                         "type": "string",
-                        "description": "Set trigger status to 'active', 'paused', or 'completed'.",
+                        "enum": ["active", "paused", "completed"],
+                        "description": "'paused' stops a reminder (use it to cancel); 'active' resumes it; 'completed' marks it done.",
                     },
                 },
                 "required": ["trigger_id"],
