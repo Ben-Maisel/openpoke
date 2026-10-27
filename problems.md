@@ -53,7 +53,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P10 | The same execution agent can run twice concurrently | D | Medium | 🔴 Open |
 | P11 | Interaction-agent turns from four sources run concurrently and race | D | Medium | 🔴 Open |
 | P12 | Failures are silent; the user gets no reply | D | Medium | 🔴 Open |
-| P13 | No tests or evaluations exist | E | High | 🟡 In progress |
+| P13 | No tests or evaluations exist | E | High | 🟢 Solved |
 | P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🔴 Open |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
 | P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🔴 Open |
@@ -67,6 +67,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
 | P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
+| P27 | The interaction agent can "edit" a draft itself, so what the user approves isn't what Gmail sends | D | High | 🔴 Open |
 
 ---
 
@@ -214,8 +215,16 @@ Each step builds on the previous ones. Related problems that touch the same code
       - `report.md` is rebuilt from the log with no API calls (`--report-only`).
       - `tests/test_routing_runner.py`, 10 CI tests.
       - Live smoke run: 20 decisions, all correct, $0.015.
-    - [ ] **Baseline run:** all 40 cases × 10/50/200/500 agents, results committed
-- **Solution:** —
+    - [x] **Baseline run.** Results are in `evals/results/baseline/`: 160 decisions on Haiku 5.5, $0.17.
+      - **Accuracy stays flat:** 98% / 100% / 100% / 98% at 10 / 50 / 200 / 500 agents.
+      - **Prompt size grows linearly:** 5,059 → 14,416 tokens per decision, about 19 tokens per agent. Cost per decision rises 2.5×.
+      - **Two misses:**
+        - a reuse the prompt itself invites (`new-leaking-sink`), with the label deliberately left unchanged after seeing results
+        - a draft rewritten by the interaction agent, now tracked as P27
+- **Solution:** a three-tier quality system.
+  - **About 420 deterministic tests run in CI** on Linux and Windows. They use fake LLM and Gmail doubles and cover unit, component and end-to-end flows. Known bugs are pinned as strict expected failures.
+  - **A logged, resumable real-model routing eval** (`python -m evals.routing`) has its own CI-tested harness and a fixed, reviewed dataset, and its baseline is committed.
+  - **Bugs found along the way:** P21–P25, P27, and P26, which was critical.
 
 ### P14: Placeholder prompt
 - **Where:** [server/agents/execution_agent/system_prompt.md:27](server/agents/execution_agent/system_prompt.md#L27)
@@ -303,6 +312,13 @@ Each step builds on the previous ones. Related problems that touch the same code
     - `tests/test_config.py`, 11 tests: the default, the global override, each per-slot override, blank values, and constructor precedence.
     - A live call through the app's OpenRouter client.
     - A live end-to-end interaction-agent turn, run against a throwaway data directory.
+
+### P27: The interaction agent rewrites drafts itself
+- **Where:** interaction-agent behavior, which nothing in [server/agents/interaction_agent/tools.py](server/agents/interaction_agent/tools.py) prevents
+- **What:** asked to "make it friendlier and shorter" after a draft was shown, the interaction agent wrote a new version and displayed it with `send_draft` + `send_message_to_user`, without delegating to the agent that owns the Gmail draft. The real draft in Gmail still holds the old text. If the user then says "send it," the drafting agent sends the version the user rejected.
+- **Found by:** the P13 baseline routing eval (`implicit-friendlier` at 500 agents). The raw model output is in `evals/results/baseline/decisions.jsonl`.
+- **Planned:** resolved by P16 + P20. `send_draft` takes only a `draft_id` and renders stored text, so the interaction agent can't show text that isn't the real draft, and only a shown and approved draft can be sent.
+- **Solution:** —
 
 ### P19: Single-user global state
 - **What:** the conversation log, roster, triggers and Gmail connection are all process-wide singletons with no user ID.
