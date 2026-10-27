@@ -47,7 +47,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟢 Solved |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
-| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🟡 Lanes done; email urgency and evaluation next |
+| P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🟡 Lanes and email urgency done; evaluation next |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
 | P9 | One global result batch: fast tasks wait for unrelated slow ones | D | High | 🔴 Open |
 | P10 | The same execution agent can run twice concurrently | D | Medium | 🟢 Solved |
@@ -326,7 +326,17 @@ Each step builds on the previous ones. Related problems that touch the same code
     - scheduler tests cover each lane, `NO_UPDATE` going silent, a failed check still reported, and only background checks being told about `NO_UPDATE`
     - center tests cover immediate delivery, digest timing, 12 updates becoming one message, nothing sent twice, quiet hours holding the digest while **now** still delivers, the end of quiet hours, force-flush, turning quiet hours off, the background loop, and quiet-hours parsing (including windows that wrap past midnight)
     - trigger tests cover defaults, validation, updates, the worker tool, and migration
-  - **Next:** emails get an urgency (urgent → now, otherwise → digest), then a "day in the life" measurement and a small urgency eval.
+  - **Emails get an urgency.** The watcher's classifier now returns a verdict: a summary plus `urgent`, which means it can't wait an hour (it needs action or a reply today, changes something happening today, or is a security code or alert).
+    - Urgent emails go to **now**; other important emails go to the **digest**.
+    - Anything unclear, including a non-boolean `urgent`, never interrupts.
+    - The interaction agent's "promptly notify" instruction now applies only to the urgent emails that reach it directly.
+    - **Verified:** the classifier and watcher had no tests before. New tests cover:
+      - the verdict, with urgency defaulting to not urgent
+      - the urgency definition reaching the model
+      - unclear or malformed answers never interrupting
+      - an outage surfacing nothing
+      - urgent emails routed to **now** and the rest to the **digest**
+  - **Next:** a "day in the life" measurement, and a small real-model urgency eval.
 
 ## D. Reliability
 

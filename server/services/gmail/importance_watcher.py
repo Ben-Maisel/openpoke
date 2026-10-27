@@ -4,25 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 
 from .client import execute_gmail_tool, get_active_gmail_user_id
 from .processing import EmailTextCleaner, ProcessedEmail, parse_gmail_fetch_response
 from .seen_store import GmailSeenStore
-from .importance_classifier import classify_email_importance
+from .importance_classifier import EmailVerdict, classify_email_importance
 from ...config import DATA_DIR, get_settings
 from ...logging_config import logger
+from ..notifications import get_notification_center
 from ...utils.timezones import convert_to_user_timezone
-
-
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from ...agents.interaction_agent.runtime import InteractionAgentRuntime
-
-
-def _resolve_interaction_runtime() -> "InteractionAgentRuntime":
-    from ...agents.interaction_agent.runtime import InteractionAgentRuntime
-
-    return InteractionAgentRuntime()
 
 
 # Poll interval, lookback, batch size and seen-ID memory are settings: email_watcher_* (server/config.py)
@@ -195,13 +186,13 @@ class ImportantEmailWatcher:
         processed_ids: List[str] = [email.id for email in aged_emails]
 
         for email in eligible_emails:
-            summary = await classify_email_importance(email)
+            verdict = await classify_email_importance(email)
             processed_ids.append(email.id)
-            if not summary:
+            if not verdict:
                 continue
 
             summaries_sent += 1
-            await self._dispatch_summary(summary)
+            await self._dispatch_summary(email, verdict)
 
         if processed_ids:
             self._seen_store.mark_seen(processed_ids)
@@ -216,11 +207,14 @@ class ImportantEmailWatcher:
         )
         self._complete_poll(user_now)
 
-    async def _dispatch_summary(self, summary: str) -> None:
-        runtime = _resolve_interaction_runtime()
+    # Urgent emails interrupt the user now; other important ones wait for the digest (P7)
+    async def _dispatch_summary(self, email: ProcessedEmail, verdict: EmailVerdict) -> None:
         try:
-            contextualized = f"Important email watcher notification:\n{summary}"
-            await runtime.handle_agent_message(contextualized)
+            await get_notification_center().notify(
+                f"Important email watcher notification:\n{verdict.summary}",
+                lane="now" if verdict.urgent else "digest",
+                source=f"email {email.id}",
+            )
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
                 "Failed to dispatch important email summary",

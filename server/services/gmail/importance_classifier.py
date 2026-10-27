@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from .processing import ProcessedEmail
@@ -30,6 +31,14 @@ _TOOL_SCHEMA: Dict[str, Any] = {
                         "coordination, or contains critical security information (e.g. OTPs)."
                     ),
                 },
+                "urgent": {
+                    "type": "boolean",
+                    "description": (
+                        "Only when important=true. True if it can't wait an hour: it needs action or a reply "
+                        "today, changes something happening today, or is a security code or alert. False if "
+                        "it matters but can wait for the user's next periodic digest."
+                    ),
+                },
                 "summary": {
                     "type": "string",
                     "description": (
@@ -51,8 +60,18 @@ _SYSTEM_PROMPT = (
     "notice, or contains high-priority updates (e.g. interviews, meeting changes). Ignore "
     "order confirmations, routine marketing, newsletters, generic receipts, and low-impact "
     "status notifications. When important, craft a brief summary that will be forwarded to the "
-    "user describing what happened and why it matters."
+    "user describing what happened and why it matters. Also decide whether it is urgent: urgent "
+    "emails interrupt the user right away, while other important emails are held for a digest "
+    "delivered within the hour. Reserve urgent for what can't wait that long."
 )
+
+
+@dataclass(frozen=True)
+class EmailVerdict:
+    """An email worth surfacing: what to tell the user, and whether it should interrupt them (P7)."""
+
+    summary: str
+    urgent: bool
 
 
 def _format_email_payload(email: ProcessedEmail) -> str:
@@ -77,8 +96,8 @@ def _format_email_payload(email: ProcessedEmail) -> str:
     )
 
 
-async def classify_email_importance(email: ProcessedEmail) -> Optional[str]:
-    """Return summary text when email should be surfaced; otherwise None."""
+async def classify_email_importance(email: ProcessedEmail) -> Optional[EmailVerdict]:
+    """Return a verdict when the email should be surfaced; otherwise None."""
 
     settings = get_settings()
     api_key = settings.openrouter_api_key
@@ -143,7 +162,7 @@ async def classify_email_importance(email: ProcessedEmail) -> Optional[str]:
             )
             return None
 
-        return summary.strip()
+        return EmailVerdict(summary=summary.strip(), urgent=arguments.get("urgent") is True)
 
     logger.debug(
         "Importance classification produced no tool call",
@@ -167,4 +186,4 @@ def _coerce_arguments(raw: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-__all__ = ["classify_email_importance"]
+__all__ = ["EmailVerdict", "classify_email_importance"]
