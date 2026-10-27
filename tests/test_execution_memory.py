@@ -4,7 +4,11 @@ import json
 
 import pytest
 
-from server.agents.execution_agent.memory import GENERIC_CHARS, MAX_LISTED, SNIPPET_CHARS, digest_tool_call, render_history
+from server.agents.execution_agent.memory import digest_tool_call, render_history
+from server.config import get_settings
+
+SETTINGS = get_settings()
+GENERIC_CHARS, MAX_LISTED, SNIPPET_CHARS = SETTINGS.digest_generic_chars, SETTINGS.digest_max_listed, SETTINGS.digest_snippet_chars
 
 
 def call(tool, arguments=None, result=None, ok=True, ref="r7"):
@@ -144,7 +148,9 @@ def test_empty_history_renders_nothing():
 
 # --- Budgeted history (P5) ---------------------------------------------------------
 
-from server.agents.execution_agent.memory import CHARS_PER_TOKEN, render_facts, render_recent_history, split_runs  # noqa: E402
+from server.agents.execution_agent.memory import render_facts, render_recent_history, split_runs  # noqa: E402
+
+CHARS_PER_TOKEN = SETTINGS.chars_per_token
 
 
 def run(i, size=0):

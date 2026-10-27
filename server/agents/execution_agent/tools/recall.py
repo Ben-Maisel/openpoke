@@ -15,17 +15,14 @@ from collections import Counter
 from functools import partial
 from typing import Any, Callable, Dict, FrozenSet, List, Optional, Tuple
 
+from server.config import get_settings
 from server.services.execution import get_execution_agent_logs
 from server.services.execution.log_store import TOOL_CALL_TAG
 from server.services.execution.matching import meaningful_words
 
 from ..memory import digest_tool_call
 
-MAX_MATCHES = 8
-MATCH_CHARS = 800  # per match summary in a search (the matched passage carries the detail)
-RECORD_CHARS = 20_000  # a full record; larger ones are cut (the journal itself never is)
-PASSAGE_CHARS = 500  # the excerpt of a tool call's full text around the words that matched
-PASSAGE_BEFORE = 150
+# Sizes are settings: recall_* (server/config.py)
 SEARCH_NOTE = ("Each match shows a summary; tool calls also show the passage of their full text that matched. "
                "For a tool call's complete record, call recall with its ref.")
 
@@ -76,10 +73,11 @@ def _by_ref(agent_id: str, ref: str) -> Dict[str, Any]:
         record = _parse(tag, payload)
         if record and record.get("ref") == ref:
             text = json.dumps(record, ensure_ascii=False, default=str)
-            if len(text) <= RECORD_CHARS:
+            limit = get_settings().recall_record_chars
+            if len(text) <= limit:
                 return {"ref": ref, "timestamp": timestamp, "record": record}
-            return {"ref": ref, "timestamp": timestamp, "record": text[:RECORD_CHARS],
-                    "note": f"Cut at {RECORD_CHARS} of {len(text)} characters."}
+            return {"ref": ref, "timestamp": timestamp, "record": text[:limit],
+                    "note": f"Cut at {limit} of {len(text)} characters."}
     return {"error": f"No tool call {ref!r} in your history. Refs look like 'r12'; use query to search."}
 
 
@@ -109,11 +107,13 @@ def _plain_text(value: Any) -> str:
 
 # The passage of the full text with the most query words in it, so a match shows why it matched
 def _passage(text: str, words: FrozenSet[str]) -> str:
+    settings = get_settings()
+    size, before = settings.recall_passage_chars, settings.recall_passage_before
     hits = [(m.start(), _stem(m.group())) for m in _WORD.finditer(text.lower()) if _stem(m.group()) in words]
     if not hits:
         return ""
     def window(anchor: int) -> List[Tuple[int, str]]:
-        return [(pos, w) for pos, w in hits if anchor <= pos <= anchor + PASSAGE_CHARS - PASSAGE_BEFORE]
+        return [(pos, w) for pos, w in hits if anchor <= pos <= anchor + size - before]
 
     def rank(hit: Tuple[int, str]) -> Tuple[int, int, int]:
         inside = window(hit[0])
@@ -121,12 +121,13 @@ def _passage(text: str, words: FrozenSet[str]) -> str:
 
     # Most distinct query words, then the tightest cluster of them (a phrase), then the earliest
     best = max(hits, key=rank)
-    start = max(0, best[0] - PASSAGE_BEFORE)
-    end = min(len(text), start + PASSAGE_CHARS)
+    start = max(0, best[0] - before)
+    end = min(len(text), start + size)
     return f"{'…' if start else ''}{text[start:end]}{'…' if end < len(text) else ''}"
 
 
 def _search(agent_id: str, query: str) -> Dict[str, Any]:
+    settings = get_settings()
     words = _stems(query)
     if not words:
         return {"error": "The query has no searchable words; name a person, subject, or detail."}
@@ -149,10 +150,10 @@ def _search(agent_id: str, query: str) -> Dict[str, Any]:
     scored.sort(key=lambda item: (-item[0], -item[1]))  # best first; newer wins a tie
 
     matches = []
-    for _, index in scored[:MAX_MATCHES]:
+    for _, index in scored[:settings.recall_max_matches]:
         tag, timestamp, shown, record, _ = entries[index]
         match: Dict[str, Any] = {"timestamp": timestamp, "kind": tag,
-                                 "text": shown if len(shown) <= MATCH_CHARS else f"{shown[:MATCH_CHARS]}…"}
+                                 "text": shown if len(shown) <= settings.recall_match_chars else f"{shown[:settings.recall_match_chars]}…"}
         if record:
             match["ref"] = record.get("ref")
             passage = _passage(_plain_text({"arguments": record.get("arguments"), "result": record.get("result")}), words)

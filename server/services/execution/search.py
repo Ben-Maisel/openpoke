@@ -16,16 +16,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, List, Mapping, Optional, Sequence
 
+from ...config import get_settings
 from .matching import meaningful_words
 from .registry import AgentRecord
 
-NAME_WEIGHT = 3.0
-FACT_WEIGHT = 2.0
-SUMMARY_WEIGHT = 1.0
-ID_MENTION_SCORE = 100.0  # a request quoting an agent's id ("... (a17)") is about that agent
-
-HOT_CACHE_SIZE = 5
-SHORTLIST_SIZE = 5
+# Weights and sizes are settings: search_*_weight, search_id_mention_score, working_set_* (server/config.py)
 
 _AGENT_ID = re.compile(r"\ba(\d+)\b")
 
@@ -75,8 +70,10 @@ def search_agents(
     query: str,
     agents: Sequence[AgentRecord],
     facts_by_id: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
-    limit: int = SHORTLIST_SIZE,
+    limit: Optional[int] = None,
 ) -> List[ScoredAgent]:
+    settings = get_settings()
+    limit = settings.working_set_matches if limit is None else limit
     facts_by_id = facts_by_id or {}
     query_words = meaningful_words(query)
     mentioned_ids = {f"a{n}" for n in _AGENT_ID.findall(query.lower())}
@@ -93,10 +90,11 @@ def search_agents(
     scored = []
     for agent in agents:
         profile = profiles[agent.id]
-        score = ID_MENTION_SCORE if agent.id in mentioned_ids else 0.0
+        score = settings.search_id_mention_score if agent.id in mentioned_ids else 0.0
         for word in query_words:
-            weight = (NAME_WEIGHT if word in profile.name else 0.0) + (FACT_WEIGHT if word in profile.facts else 0.0) \
-                + (SUMMARY_WEIGHT if word in profile.summary else 0.0)
+            weight = (settings.search_name_weight if word in profile.name else 0.0) \
+                + (settings.search_fact_weight if word in profile.facts else 0.0) \
+                + (settings.search_summary_weight if word in profile.summary else 0.0)
             if weight:
                 score += weight * math.log(1 + total / document_frequency[word])
         if score > 0:
@@ -112,9 +110,12 @@ def select_working_set(
     query: str,
     agents: Sequence[AgentRecord],
     facts_by_id: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
-    hot_size: int = HOT_CACHE_SIZE,
-    shortlist_size: int = SHORTLIST_SIZE,
+    hot_size: Optional[int] = None,
+    shortlist_size: Optional[int] = None,
 ) -> WorkingSet:
+    settings = get_settings()
+    hot_size = settings.working_set_recent if hot_size is None else hot_size
+    shortlist_size = settings.working_set_matches if shortlist_size is None else shortlist_size
     by_recency = sorted(agents, key=lambda a: (a.last_used_at, int(a.id[1:])), reverse=True)
     hot = by_recency[:hot_size]
     hot_ids = {a.id for a in hot}
@@ -123,4 +124,4 @@ def select_working_set(
     return WorkingSet(hot=hot, matches=matches, total_agents=len(agents))
 
 
-__all__ = ["HOT_CACHE_SIZE", "SHORTLIST_SIZE", "ScoredAgent", "WorkingSet", "search_agents", "select_working_set"]
+__all__ = ["ScoredAgent", "WorkingSet", "search_agents", "select_working_set"]

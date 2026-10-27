@@ -94,12 +94,53 @@ class Settings(BaseModel):
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
 
-    # How much of its own past runs an execution agent sees in its prompt (estimated tokens)
-    execution_history_token_budget: int = Field(default=_env_int("OPENPOKE_EXECUTION_HISTORY_TOKENS", 4000))
+    # --- Agent loops and timeouts -------------------------------------------------------------
+    interaction_max_tool_rounds: int = 8  # model calls per interaction-agent turn
+    execution_max_tool_rounds: int = 8  # model calls per execution-agent run
+    email_search_max_rounds: int = 8  # model calls inside one email search task
+    execution_timeout_seconds: int = 90  # a run taking longer is reported as failed
+    trigger_poll_interval_seconds: float = 10.0  # how often due reminders are checked
 
+    # --- Important-email watcher --------------------------------------------------------------
+    email_watcher_poll_interval_seconds: float = 60.0
+    email_watcher_lookback_minutes: int = 10
+    email_watcher_max_results: int = 50
+    email_watcher_seen_limit: int = 300  # message IDs remembered to avoid alerting twice
+
+    # --- Routing: which agents the interaction agent sees (P2, P4) ------------------------------
+    working_set_recent: int = 5  # most recently used agents always shown
+    working_set_matches: int = 5  # best search matches shown on top of those
+    routing_context_chars: int = 600  # recent conversation added to the search query
+    search_name_weight: float = 3.0  # how much a query word counts when found in an agent's name...
+    search_fact_weight: float = 2.0  # ...its facts (people, addresses, IDs)...
+    search_summary_weight: float = 1.0  # ...or its card summary (all scaled by the word's rarity)
+    search_id_mention_score: float = 100.0  # a message quoting an agent's ID is about that agent
+    duplicate_name_threshold: float = 2 / 3  # share of meaningful name words that makes a likely duplicate
+    duplicate_max_candidates: int = 3
+    unknown_agent_suggestions: int = 3  # agents suggested when the model uses an unknown ID
+
+    # --- Agent cards (P1) -----------------------------------------------------------------------
+    initial_card_chars: int = 500  # a new agent's card starts as its first instructions, this long
+    card_max_chars: int = 600  # the card summary the refresh may write
+    facts_per_call_limit: int = 20  # facts of one kind recorded from a single tool call
+
+    # --- Agent lifecycle (P3) ------------------------------------------------------------------
     # Agents idle this many days with nothing open (no open drafts, no live reminders) are archived:
     # hidden from the working set and duplicate check, still searchable, revived on use. 0 turns it off.
     agent_archive_after_days: int = Field(default=_env_int("OPENPOKE_ARCHIVE_AFTER_DAYS", 30))
+
+    # --- Worker memory (P5, P6) ------------------------------------------------------------------
+    # How much of its own past runs an execution agent sees in its prompt (estimated tokens)
+    execution_history_token_budget: int = Field(default=_env_int("OPENPOKE_EXECUTION_HISTORY_TOKENS", 4000))
+    chars_per_token: int = 4  # rough token estimate; avoids a tokenizer dependency
+    digest_snippet_chars: int = 150  # per email in a search digest
+    digest_generic_chars: int = 400  # for tools without a dedicated digest
+    digest_max_listed: int = 20  # emails, triggers or facts listed before "… N more"
+    recall_max_matches: int = 8
+    recall_match_chars: int = 800  # per match summary (the matched passage carries the detail)
+    recall_passage_chars: int = 500  # excerpt of a tool call's full text around the matched words
+    recall_passage_before: int = 150  # how much of that excerpt comes before the first match
+    recall_record_chars: int = 20_000  # a full record returned by ref (the journal itself is never cut)
 
     @property
     def cors_allow_origins(self) -> List[str]:

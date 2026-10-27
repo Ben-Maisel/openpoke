@@ -48,8 +48,6 @@ class _LoopSummary:
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    MAX_TOOL_ITERATIONS = 8
-
     # Initialize interaction agent runtime with settings and service dependencies
     def __init__(self) -> None:
         settings = get_settings()
@@ -154,7 +152,7 @@ class InteractionAgentRuntime:
 
         summary = _LoopSummary()
 
-        for iteration in range(self.MAX_TOOL_ITERATIONS):
+        for iteration in range(self.settings.interaction_max_tool_rounds):
             response = await self._make_llm_call(system_prompt, messages)
             assistant_message = self._extract_assistant_message(response)
 

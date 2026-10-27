@@ -7,7 +7,10 @@ import pytest
 from fakes import calls, is_execution_agent, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
 from server.agents.execution_agent.tools import get_tool_registry, get_tool_schemas
-from server.agents.execution_agent.tools.recall import MATCH_CHARS, MAX_MATCHES, RECORD_CHARS
+from server.config import get_settings
+
+SETTINGS = get_settings()
+MATCH_CHARS, MAX_MATCHES, RECORD_CHARS = SETTINGS.recall_match_chars, SETTINGS.recall_max_matches, SETTINGS.recall_record_chars
 from server.services import get_agent_registry, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state")
@@ -138,7 +141,9 @@ async def test_worker_can_recall_a_full_record_mid_run(fake_llm, fake_gmail):
 
 # --- Matched passages and word forms (after the first memory eval) ---------------------
 
-from server.agents.execution_agent.tools.recall import PASSAGE_CHARS, SEARCH_NOTE, _stem  # noqa: E402
+from server.agents.execution_agent.tools.recall import SEARCH_NOTE, _stem  # noqa: E402
+
+PASSAGE_CHARS = SETTINGS.recall_passage_chars
 
 
 @pytest.mark.parametrize("word, stem", [

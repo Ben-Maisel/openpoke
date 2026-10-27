@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Collection, Dict, List, Optional
 
+from ...config import get_settings
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import AgentRecord, get_agent_registry, get_draft_store
@@ -163,9 +164,6 @@ TOOL_SCHEMAS = [
 ]
 
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
-# A new agent's card starts as the instructions it was created with (refreshed after each run, P1d)
-_INITIAL_SUMMARY_CHARS = 500
-_SUGGESTIONS = 3
 
 
 # Send instructions to an existing agent by ID; an unknown ID is an error, never a silent create
@@ -175,7 +173,7 @@ def send_message_to_agent(agent_id: str, instructions: str) -> ToolResult:
     agent = registry.get(agent_id)
     if agent is None:
         active, _ = split_archived(registry.list_agents(), registry.all_facts())
-        recent = [{"agent_id": a.id, "name": a.name} for a in active[:_SUGGESTIONS]]
+        recent = [{"agent_id": a.id, "name": a.name} for a in active[:get_settings().unknown_agent_suggestions]]
         return ToolResult(success=False, payload={
             "error": f"No agent with id {agent_id!r}. Use an id from <active_agents>, or create_agent for a new task.",
             "recently_used_agents": recent,
@@ -195,7 +193,8 @@ def create_agent(name: str, instructions: str, confirm_new: bool = False) -> Too
             return ToolResult(success=True, payload=duplicate_warning(candidates))
     if _running_loop() is None:
         return ToolResult(success=False, payload={"error": "No event loop available"})
-    agent = registry.create(name, summary=instructions[:_INITIAL_SUMMARY_CHARS])
+    # A new agent's card starts as the instructions it was created with (refreshed after each run, P1d)
+    agent = registry.create(name, summary=instructions[:get_settings().initial_card_chars])
     logger.info(f"Created agent {agent.id} ({agent.name})")
     return _dispatch(agent, instructions, new_agent_created=True)
 

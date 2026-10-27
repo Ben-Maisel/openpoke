@@ -10,8 +10,6 @@ from ...logging_config import logger
 from ...openrouter_client import request_chat_completion
 from ...services.execution import get_agent_registry
 
-MAX_SUMMARY_CHARS = 600
-
 CARD_SYSTEM_PROMPT = (
     "You maintain a status card for one background worker of a personal assistant. The assistant reads "
     "these cards to decide which worker should handle a new request, so the card must say what this worker "
@@ -54,7 +52,7 @@ async def refresh_card_summary(agent_id: str, request: str, response: str) -> Op
         logger.warning(f"[{agent_id}] Card refresh failed: {exc}")
         return None
 
-    summary = " ".join(summary.split())[:MAX_SUMMARY_CHARS]
+    summary = " ".join(summary.split())[:settings.card_max_chars]
     if not summary:
         return None
     registry.update_summary(agent_id, summary)
@@ -72,4 +70,4 @@ def schedule_card_refresh(agent_id: str, request: str, response: str) -> None:
     task.add_done_callback(_background_refreshes.discard)
 
 
-__all__ = ["CARD_SYSTEM_PROMPT", "MAX_SUMMARY_CHARS", "refresh_card_summary", "schedule_card_refresh"]
+__all__ = ["CARD_SYSTEM_PROMPT", "refresh_card_summary", "schedule_card_refresh"]

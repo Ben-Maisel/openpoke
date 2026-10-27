@@ -6,12 +6,14 @@ from pathlib import Path
 import pytest
 
 from server.services.execution.matching import (
-    DUPLICATE_THRESHOLD,
     find_possible_duplicates,
     meaningful_words,
     name_similarity,
 )
+from server.config import get_settings
 from server.services.execution.registry import AgentRecord
+
+DUPLICATE_THRESHOLD = get_settings().duplicate_name_threshold
 
 DECOYS = json.loads((Path(__file__).resolve().parents[1] / "evals" / "routing" / "data" / "decoys.json").read_text())["decoys"]
 CASES = {c["id"]: c for c in json.loads(

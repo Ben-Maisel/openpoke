@@ -11,9 +11,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from ...config import get_settings
+
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 _NAMED_ADDRESS = re.compile(r"([^<>,;\"]+?)\s*<\s*([\w.+-]+@[\w-]+(?:\.[\w-]+)+)\s*>")
-_MAX_FACTS_PER_KIND = 20  # a broad search shouldn't flood the card
 
 
 @dataclass
@@ -32,7 +33,8 @@ class FactChanges:
             self.remove.setdefault(kind, set()).update(cleaned)
 
     def capped(self) -> "FactChanges":
-        self.add = {kind: set(sorted(values)[:_MAX_FACTS_PER_KIND]) for kind, values in self.add.items()}
+        limit = get_settings().facts_per_call_limit  # a broad search shouldn't flood the card
+        self.add = {kind: set(sorted(values)[:limit]) for kind, values in self.add.items()}
         return self
 
 

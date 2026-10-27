@@ -4,7 +4,10 @@ import pytest
 
 from fakes import calls, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
-from server.agents.execution_agent.tasks.search_email.tool import MAX_LLM_ITERATIONS, task_email_search
+from server.agents.execution_agent.tasks.search_email.tool import task_email_search
+from server.config import get_settings
+
+MAX_LLM_ITERATIONS = get_settings().email_search_max_rounds
 from server.services import get_agent_registry
 
 pytestmark = pytest.mark.usefixtures("clean_state")

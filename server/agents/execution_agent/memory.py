@@ -14,13 +14,11 @@ import json
 from html import escape
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Sequence, Tuple
 
+from ...config import get_settings
 from ...services.execution.log_store import TOOL_CALL_TAG
 from .facts import draft_id
 
-SNIPPET_CHARS = 150  # per email in a search digest
-GENERIC_CHARS = 400  # for tools without a dedicated digest
-MAX_LISTED = 20  # emails or triggers listed before "… N more"
-CHARS_PER_TOKEN = 4  # rough estimate; avoids a tokenizer dependency
+# Sizes are settings: digest_*, chars_per_token (server/config.py)
 
 Entry = Tuple[str, str, str]
 
@@ -36,16 +34,17 @@ def _one_line(text: Any, limit: int) -> str:
 
 
 def _search(args: Dict[str, Any], result: Any, ref: str) -> str:
+    max_listed = get_settings().digest_max_listed
     emails = [e for e in result if isinstance(e, dict)] if isinstance(result, list) else []
     lines = [f"searched \"{args.get('search_query', '')}\" → {len(emails)} email(s)"]
-    for email in emails[:MAX_LISTED]:
+    for email in emails[:max_listed]:
         lines.append(
             f"- {email.get('id')} (thread {email.get('thread_id')}) | {str(email.get('timestamp', ''))[:16]}"
             f" | from {email.get('sender')} | to {email.get('recipient')} | {email.get('subject')}"
-            f" | {_one_line(email.get('clean_text'), SNIPPET_CHARS)}"
+            f" | {_one_line(email.get('clean_text'), get_settings().digest_snippet_chars)}"
         )
-    if len(emails) > MAX_LISTED:
-        lines.append(f"- … {len(emails) - MAX_LISTED} more (full result: {ref})")
+    if len(emails) > max_listed:
+        lines.append(f"- … {len(emails) - max_listed} more (full result: {ref})")
     return "\n".join(lines)
 
 
@@ -75,7 +74,7 @@ def _trigger_line(trigger: Dict[str, Any], payload: Any = None) -> str:
     line = (f"trigger {trigger.get('trigger_id', trigger.get('id'))} {trigger.get('status')}"
             f", next {trigger.get('next_trigger')}, repeats {trigger.get('recurrence_rule') or 'never'}")
     payload = payload or trigger.get("payload")
-    return f"{line} | \"{_one_line(payload, SNIPPET_CHARS)}\"" if payload else line
+    return f"{line} | \"{_one_line(payload, get_settings().digest_snippet_chars)}\"" if payload else line
 
 
 def _trigger(args: Dict[str, Any], result: Any, ref: str) -> str:
@@ -86,9 +85,10 @@ def _trigger(args: Dict[str, Any], result: Any, ref: str) -> str:
 
 def _list_triggers(args: Dict[str, Any], result: Any, ref: str) -> str:
     triggers = result.get("triggers", []) if isinstance(result, dict) else []
-    lines = [f"{len(triggers)} trigger(s)"] + [f"- {_trigger_line(t)}" for t in triggers[:MAX_LISTED]]
-    if len(triggers) > MAX_LISTED:
-        lines.append(f"- … {len(triggers) - MAX_LISTED} more (full result: {ref})")
+    max_listed = get_settings().digest_max_listed
+    lines = [f"{len(triggers)} trigger(s)"] + [f"- {_trigger_line(t)}" for t in triggers[:max_listed]]
+    if len(triggers) > max_listed:
+        lines.append(f"- … {len(triggers) - max_listed} more (full result: {ref})")
     return "\n".join(lines)
 
 
@@ -100,7 +100,8 @@ def _recall(args: Dict[str, Any], result: Any, ref: str) -> str:
 
 
 def _generic(args: Dict[str, Any], result: Any, ref: str) -> str:
-    return f"args {_compact(args, GENERIC_CHARS, ref)} → {_compact(result, GENERIC_CHARS, ref)}"
+    limit = get_settings().digest_generic_chars
+    return f"args {_compact(args, limit, ref)} → {_compact(result, limit, ref)}"
 
 
 _DIGESTS: Dict[str, Callable[[Dict[str, Any], Any, str], str]] = {
@@ -124,7 +125,8 @@ def digest_tool_call(record: Dict[str, Any]) -> str:
     result = record.get("result")
     if not record.get("ok"):
         error = result.get("error", result) if isinstance(result, dict) else result
-        return f"{tool} [{ref}] failed: {_one_line(error, GENERIC_CHARS)} | args {_compact(args, GENERIC_CHARS, ref)}"
+        limit = get_settings().digest_generic_chars
+        return f"{tool} [{ref}] failed: {_one_line(error, limit)} | args {_compact(args, limit, ref)}"
     return f"{tool} [{ref}]: {_DIGESTS.get(tool, _generic)(args, result, ref)}"
 
 
@@ -161,7 +163,7 @@ def split_runs(entries: Sequence[Entry]) -> Tuple[List[List[Entry]], List[Entry]
 # The newest whole runs that fit the budget (the latest one always), plus a note about the rest
 def render_recent_history(entries: Sequence[Entry], token_budget: int) -> str:
     runs, in_progress = split_runs(entries)
-    budget = token_budget * CHARS_PER_TOKEN - len(render_history(in_progress))
+    budget = token_budget * get_settings().chars_per_token - len(render_history(in_progress))
     kept: List[str] = []
     for run in reversed(runs):
         text = render_history(run)
@@ -184,11 +186,12 @@ _FACT_LABELS = (("draft", "Open drafts"), ("trigger", "Live reminders"), ("threa
 # The agent's recorded facts as short labelled lines (each kind capped so the list stays bounded)
 def render_facts(facts: Mapping[str, Sequence[str]]) -> str:
     lines = []
+    max_listed = get_settings().digest_max_listed
     for kind, label in _FACT_LABELS:
         values = list(facts.get(kind) or [])
         if values:
-            more = f" (+{len(values) - MAX_LISTED} more)" if len(values) > MAX_LISTED else ""
-            lines.append(f"- {label}: {', '.join(values[:MAX_LISTED])}{more}")
+            more = f" (+{len(values) - max_listed} more)" if len(values) > max_listed else ""
+            lines.append(f"- {label}: {', '.join(values[:max_listed])}{more}")
     return "\n".join(lines) or "None recorded yet."
 
 

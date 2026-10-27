@@ -5,6 +5,7 @@ from html import escape
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from ...config import get_settings
 from ...services.execution import AgentRecord, get_agent_registry
 from ...services.execution.lifecycle import split_archived
 from ...services.execution.search import WorkingSet, select_working_set
@@ -14,7 +15,6 @@ SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
 
 # How much of the end of the conversation feeds the agent search, so a follow-up like
 # "what did she say?" still has the names and topics it refers to (about the last two turns).
-_RECENT_CONTEXT_CHARS = 600
 _TAG = re.compile(r"<[^>]+>")
 
 FactsById = Mapping[str, Mapping[str, Sequence[str]]]
@@ -28,7 +28,7 @@ def build_system_prompt() -> str:
 
 # The text the agent search runs on: the new message plus the tail of the conversation
 def routing_query(latest_text: str, transcript: str) -> str:
-    recent = _TAG.sub(" ", transcript)[-_RECENT_CONTEXT_CHARS:]
+    recent = _TAG.sub(" ", transcript)[-get_settings().routing_context_chars:]
     return f"{latest_text}\n{recent}"
 
 

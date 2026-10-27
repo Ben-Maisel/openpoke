@@ -6,6 +6,7 @@ import pytest
 
 from fakes import calls, is_execution_agent, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
+from server.config import get_settings
 from server.openrouter_client import OpenRouterError
 from server.services import get_agent_registry, get_draft_store, get_execution_agent_logs
 
@@ -168,7 +169,7 @@ async def test_gmail_not_connected_reaches_the_model(fake_llm, fake_gmail, agent
 # --- Whole-run failures ---------------------------------------------------
 
 async def test_iteration_limit_fails_the_run_and_is_logged(fake_llm, fake_gmail, agent):
-    limit = ExecutionAgentRuntime.MAX_TOOL_ITERATIONS
+    limit = get_settings().execution_max_tool_rounds
     fake_llm.for_execution(*[calls(("gmail_list_drafts", {}))] * limit)
     result = await ExecutionAgentRuntime(agent.id).execute("loop forever")
     assert result.success is False

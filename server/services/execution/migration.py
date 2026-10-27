@@ -14,11 +14,11 @@ import shutil
 from pathlib import Path
 from typing import Dict, List
 
+from ...config import get_settings
 from ...logging_config import logger
 from .log_store import ExecutionAgentLogStore, _slugify
 from .registry import AgentRegistry
 
-_SUMMARY_CHARS = 500
 
 
 # Import a legacy roster; returns {old name: new agent ID} (empty if there is nothing to import)
@@ -54,7 +54,7 @@ def migrate_legacy_roster(agents_dir: Path, registry: AgentRegistry, log_store: 
 
 def _last_request(log_store: ExecutionAgentLogStore, legacy_key: str) -> str:
     requests = [payload for tag, _, payload in log_store.iter_entries(legacy_key) if tag == "agent_request"]
-    return requests[-1][:_SUMMARY_CHARS] if requests else ""
+    return requests[-1][:get_settings().initial_card_chars] if requests else ""
 
 
 __all__ = ["migrate_legacy_roster"]

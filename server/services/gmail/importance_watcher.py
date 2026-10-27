@@ -10,7 +10,7 @@ from .client import execute_gmail_tool, get_active_gmail_user_id
 from .processing import EmailTextCleaner, ProcessedEmail, parse_gmail_fetch_response
 from .seen_store import GmailSeenStore
 from .importance_classifier import classify_email_importance
-from ...config import DATA_DIR
+from ...config import DATA_DIR, get_settings
 from ...logging_config import logger
 from ...utils.timezones import convert_to_user_timezone
 
@@ -25,10 +25,7 @@ def _resolve_interaction_runtime() -> "InteractionAgentRuntime":
     return InteractionAgentRuntime()
 
 
-DEFAULT_POLL_INTERVAL_SECONDS = 60.0
-DEFAULT_LOOKBACK_MINUTES = 10
-DEFAULT_MAX_RESULTS = 50
-DEFAULT_SEEN_LIMIT = 300
+# Poll interval, lookback, batch size and seen-ID memory are settings: email_watcher_* (server/config.py)
 
 
 _DEFAULT_SEEN_PATH = DATA_DIR / "gmail_seen.json"
@@ -39,17 +36,18 @@ class ImportantEmailWatcher:
 
     def __init__(
         self,
-        poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
-        lookback_minutes: int = DEFAULT_LOOKBACK_MINUTES,
+        poll_interval_seconds: Optional[float] = None,
+        lookback_minutes: Optional[int] = None,
         *,
         seen_store: Optional[GmailSeenStore] = None,
     ) -> None:
-        self._poll_interval = poll_interval_seconds
-        self._lookback_minutes = lookback_minutes
+        settings = get_settings()
+        self._poll_interval = settings.email_watcher_poll_interval_seconds if poll_interval_seconds is None else poll_interval_seconds
+        self._lookback_minutes = settings.email_watcher_lookback_minutes if lookback_minutes is None else lookback_minutes
         self._lock = asyncio.Lock()
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False
-        self._seen_store = seen_store or GmailSeenStore(_DEFAULT_SEEN_PATH, DEFAULT_SEEN_LIMIT)
+        self._seen_store = seen_store or GmailSeenStore(_DEFAULT_SEEN_PATH, settings.email_watcher_seen_limit)
         self._cleaner = EmailTextCleaner(max_url_length=60)
         self._has_seeded_initial_snapshot = False
         self._last_poll_timestamp: Optional[datetime] = None
@@ -118,7 +116,7 @@ class ImportantEmailWatcher:
         arguments = {
             "query": query,
             "include_payload": True,
-            "max_results": DEFAULT_MAX_RESULTS,
+            "max_results": get_settings().email_watcher_max_results,
         }
 
         try:

@@ -12,7 +12,7 @@ from server.agents.interaction_agent import runtime as runtime_module
 from server.agents.interaction_agent import tools as tools_module
 from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.app import app
-from server.config import Settings
+from server.config import Settings, get_settings
 from server.openrouter_client import OpenRouterError
 from server.services import get_agent_registry, get_conversation_log, get_draft_store, get_execution_agent_logs
 
@@ -268,7 +268,7 @@ async def test_bad_tool_calls_are_reported_back_to_the_model(fake_llm, bad_call,
 # --- Failures --------------------------------------------------------------
 
 async def test_stops_after_max_tool_iterations(fake_llm):
-    limit = InteractionAgentRuntime.MAX_TOOL_ITERATIONS
+    limit = get_settings().interaction_max_tool_rounds
     fake_llm.for_interaction(*[calls(("wait", {"reason": "loop"}))] * limit)
     result = await InteractionAgentRuntime().execute("hi")
     assert result.success is False
@@ -297,7 +297,7 @@ async def test_user_is_told_when_the_assistant_fails(fake_llm):
 
 
 async def test_user_is_told_when_the_iteration_limit_is_hit(fake_llm):
-    fake_llm.for_interaction(*[calls(("wait", {"reason": "loop"}))] * InteractionAgentRuntime.MAX_TOOL_ITERATIONS)
+    fake_llm.for_interaction(*[calls(("wait", {"reason": "loop"}))] * get_settings().interaction_max_tool_rounds)
     await InteractionAgentRuntime().execute("hi")
     assert chat() == [("user", "hi"), ("assistant", runtime_module.USER_TURN_FAILED)]
 

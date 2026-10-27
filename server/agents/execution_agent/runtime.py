@@ -29,8 +29,6 @@ class ExecutionResult:
 class ExecutionAgentRuntime:
     """Manages the execution of a single agent request."""
 
-    MAX_TOOL_ITERATIONS = 8
-
     # Initialize execution agent runtime for a registered agent, with its settings and tools
     def __init__(self, agent_id: str):
         settings = get_settings()
@@ -41,6 +39,7 @@ class ExecutionAgentRuntime:
         self.agent = ExecutionAgent(record.id, record.name, record.summary, facts=self._registry.facts(record.id))
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
+        self.max_tool_rounds = settings.execution_max_tool_rounds
         self.tool_registry = get_tool_registry(agent_id=record.id)
         self.tool_schemas = get_tool_schemas()
 
@@ -60,7 +59,7 @@ class ExecutionAgentRuntime:
             tools_executed: List[str] = []
             final_response: Optional[str] = None
 
-            for iteration in range(self.MAX_TOOL_ITERATIONS):
+            for iteration in range(self.max_tool_rounds):
                 logger.info(
                     f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})"
                 )

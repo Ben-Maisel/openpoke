@@ -5,7 +5,8 @@ import asyncio
 import pytest
 
 from fakes import Gated, calls, is_card_refresh, reply, wait_until
-from server.agents.execution_agent.card import MAX_SUMMARY_CHARS, refresh_card_summary
+from server.agents.execution_agent.card import refresh_card_summary
+from server.config import get_settings
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
 from server.config import get_settings
 from server.openrouter_client import OpenRouterError
@@ -42,7 +43,7 @@ async def test_card_text_is_tidied_and_capped(fake_llm, agent):
     fake_llm.script(reply("  Line one\n\n  line   two  " + "x" * 1000), when=is_card_refresh)
     new = await refresh_card_summary(agent.id, "r", "s")
     assert new.startswith("Line one line two ")
-    assert len(new) == MAX_SUMMARY_CHARS
+    assert len(new) == get_settings().card_max_chars
 
 
 @pytest.mark.parametrize("failure", [OpenRouterError("503"), reply("   "), {"choices": []}])

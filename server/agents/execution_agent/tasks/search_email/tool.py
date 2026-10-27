@@ -28,7 +28,6 @@ from .schemas import (
 from .system_prompt import get_system_prompt
 
 # Constants
-MAX_LLM_ITERATIONS = 8
 ERROR_GMAIL_NOT_CONNECTED = "Gmail not connected. Please connect Gmail in settings first."
 ERROR_OPENROUTER_NOT_CONFIGURED = "OpenRouter API key not configured. Set OPENROUTER_API_KEY."
 ERROR_EMPTY_QUERY = "search_query must not be empty"
@@ -137,7 +136,7 @@ async def _run_email_search(
     emails: Dict[str, GmailSearchEmail] = {}
     selected_ids: Optional[List[str]] = None
     
-    for iteration in range(MAX_LLM_ITERATIONS):
+    for iteration in range(get_settings().email_search_max_rounds):
         logger.debug(
             "[task_email_search] LLM iteration",
             extra={"iteration": iteration + 1, "tool": TASK_TOOL_NAME},

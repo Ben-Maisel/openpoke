@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import FrozenSet, Iterable, List
 
+from ...config import get_settings
 from .registry import AgentRecord
 
 # Words that say what kind of task an agent does, not what it is about
@@ -24,8 +25,6 @@ GENERIC_WORDS = frozenset(
     """.split()
 )
 
-DUPLICATE_THRESHOLD = 2 / 3  # e.g. two of three meaningful words shared
-MAX_CANDIDATES = 3
 
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -56,18 +55,18 @@ class DuplicateCandidate:
 
 # Existing agents a new agent called `name` would likely duplicate, most similar first
 def find_possible_duplicates(name: str, agents: Iterable[AgentRecord]) -> List[DuplicateCandidate]:
+    settings = get_settings()  # duplicate_name_threshold 2/3: e.g. two of three meaningful words shared
     candidates = [
         DuplicateCandidate(agent, score)
         for agent in agents
-        if (score := name_similarity(name, agent.name)) >= DUPLICATE_THRESHOLD
+        if (score := name_similarity(name, agent.name)) >= settings.duplicate_name_threshold
     ]
     candidates.sort(key=lambda c: c.agent.last_used_at, reverse=True)  # ties: most recently used first
     candidates.sort(key=lambda c: c.similarity, reverse=True)          # stable, so recency order survives
-    return candidates[:MAX_CANDIDATES]
+    return candidates[:settings.duplicate_max_candidates]
 
 
 __all__ = [
-    "DUPLICATE_THRESHOLD",
     "DuplicateCandidate",
     "GENERIC_WORDS",
     "find_possible_duplicates",

@@ -8,6 +8,7 @@ from typing import Optional, Set
 
 from ..agents.execution_agent.batch_manager import ExecutionBatchManager
 from ..agents.execution_agent.runtime import ExecutionResult
+from ..config import get_settings
 from ..logging_config import logger
 from .triggers import TriggerRecord, get_trigger_service
 
@@ -26,8 +27,9 @@ def _isoformat(dt: datetime) -> str:
 class TriggerScheduler:
     """Polls stored triggers and launches execution agents when due."""
 
-    def __init__(self, poll_interval_seconds: float = 10.0) -> None:
-        self._poll_interval = poll_interval_seconds
+    def __init__(self, poll_interval_seconds: Optional[float] = None) -> None:
+        self._poll_interval = (get_settings().trigger_poll_interval_seconds
+                               if poll_interval_seconds is None else poll_interval_seconds)
         self._service = get_trigger_service()
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False

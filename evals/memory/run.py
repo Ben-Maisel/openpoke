@@ -65,7 +65,15 @@ def dataset_fingerprint() -> str:
 def app_fingerprint() -> str:
     """The current app's memory: worker prompt, tool schemas, rendering, recall, and the card prompt."""
     return _sha(SYSTEM_PROMPT_TEMPLATE, json.dumps(get_tool_schemas(), sort_keys=True),
-                inspect.getsource(memory), inspect.getsource(recall), card.CARD_SYSTEM_PROMPT, str(card.MAX_SUMMARY_CHARS))
+                inspect.getsource(memory), inspect.getsource(recall), card.CARD_SYSTEM_PROMPT, _memory_settings())
+
+
+def _memory_settings() -> str:
+    """The settings that shape worker memory (sizes of cards, digests and recall)."""
+    settings = get_settings()
+    keys = sorted(k for k in type(settings).model_fields
+                  if k.startswith(("card_", "digest_", "recall_", "chars_per_token", "facts_per_call")))
+    return json.dumps({k: getattr(settings, k) for k in keys})
 
 
 def run_identity(config: RunConfig) -> Dict[str, Any]:
