@@ -134,3 +134,42 @@ async def test_worker_can_recall_a_full_record_mid_run(fake_llm, fake_gmail):
     assert fed_back["result"]["record"]["result"][0]["clean_text"] == body
     last = [p for t, _, p in logs().iter_entries(agent.id) if t == "tool_call"][-1]
     assert json.loads(last)["ref"] == "r2"
+
+
+# --- Matched passages and word forms (after the first memory eval) ---------------------
+
+from server.agents.execution_agent.tools.recall import PASSAGE_CHARS, SEARCH_NOTE, _stem  # noqa: E402
+
+
+@pytest.mark.parametrize("word, stem", [
+    ("hotels", "hotel"), ("replies", "reply"), ("matches", "match"), ("boxes", "box"),
+    ("address", "address"), ("status", "status"), ("analysis", "analysis"), ("bus", "bus"), ("as", "as"),
+])
+def test_plural_endings_are_ignored(word, stem):
+    assert _stem(word) == stem
+
+
+def test_plural_and_singular_find_each_other():
+    logs().record_request("a1", "Keep hotels under $250 a night")
+    assert [m["text"] for m in recall(query="hotel budget")["matches"]] == ["Keep hotels under $250 a night"]
+
+
+def test_tool_call_matches_show_the_passage_that_matched_and_their_ref():
+    text = ("Hi! Logistics while I have you: badges at the front desk, bring a charger, wifi password is on the "
+            "screen in the room. " + "Filler sentence about nothing. " * 10 +
+            "The offsite itself is in the Larimer B room on the 4th floor.")
+    logs().record_tool_call("a1", "task_email_search", {"search_query": "dinner"}, True,
+                            search_result(("m-1", "Priya <p@x.com>", "Re: dinner", text)))
+    result = recall(query="offsite room")
+    (match,) = result["matches"]
+    assert match["ref"] == "r1"
+    assert "Larimer B room on the 4th floor" in match["matched_passage"]  # the window with both words wins
+    assert len(match["matched_passage"]) <= PASSAGE_CHARS + 2
+    assert "Larimer B" not in match["text"]  # the digest's snippet alone would have missed it
+    assert result["note"] == SEARCH_NOTE
+
+
+def test_plain_entries_have_no_ref_or_passage():
+    logs().record_agent_response("a1", "Dinner is at Tavernetta")
+    (match,) = recall(query="Tavernetta")["matches"]
+    assert set(match) == {"timestamp", "kind", "text"}
