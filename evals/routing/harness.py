@@ -22,7 +22,7 @@ from .scoring import NEW_AGENT_PREFIX
 # can keep going (e.g. it says "on it" to the user before delegating).
 _FAKE_TOOL_RESULTS = {
     "send_message_to_user": {"status": "delivered"},
-    "send_draft": {"status": "draft_recorded"},
+    "send_draft": {"status": "draft_shown"},
     "wait": {"status": "waiting"},
 }
 _HISTORY_TIMESTAMP = "2026-10-26 09:00:00"

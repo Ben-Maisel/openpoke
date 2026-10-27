@@ -419,7 +419,17 @@ Each step builds on the previous ones. Related problems that touch the same code
      - A draft moves open → shown → approved → sent, or to deleted before it's sent. The store refuses any other move with a clear error: an unseen draft can't be approved, an unapproved draft can't be sent, and a sent draft is final.
      - Recording the same ID again replaces the text and restarts approval.
      - Clearing chat history clears drafts.
-     - This step changes no behavior yet. Showing, approving and gating come next.
+     - This step changes no behavior yet; showing, approving and gating come in the next steps.
+  2. **Drafts are shown by ID, exactly as stored.**
+     - `send_draft(draft_id)` replaces `send_draft(to, subject, body)`. The server renders the stored draft and records it with a new `draft` log entry, which the chat history serves as `role: "draft"`, so the UI's draft bubble finally shows.
+     - The draft is marked shown.
+     - Unknown, sent or deleted drafts can't be shown. The error lists the drafts that can be.
+     - The interaction agent can no longer pass its own email text to the tool. Its prompt says to never write or rewrite email text, and to send edits back to the agent that owns the draft.
+     - Workers now report draft IDs instead of retyping the body.
+     - **Verified:**
+       - The P16 expected failure became a real test: the draft reaches the chat as a draft bubble with the exact stored text.
+       - New tests cover unknown and deleted drafts, and an old-style `send_draft(to, subject, body)` call being rejected with nothing shown.
+       - The end-to-end draft → confirm → send test now shows the stored draft.
 
 ### P17: Gmail and search actions logged under the wrong name
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py), [server/agents/execution_agent/tasks/search_email/tool.py](server/agents/execution_agent/tasks/search_email/tool.py)

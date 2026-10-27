@@ -57,7 +57,7 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
         when=user_turn,
     )
     fake_llm.script(
-        calls(("send_draft", {"to": "alice@example.com", "subject": "Lunch Friday?", "body": "Are you free at noon?"}),
+        calls(("send_draft", {"draft_id": "r-1"}),
               ("send_message_to_user", {"message": "want me to send it?"})), reply(""),
         calls(("send_message_to_user", {"message": "sent!"})), reply(""),
         when=agent_turn,
@@ -82,7 +82,7 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
     assert chat() == [
         ("user", "invite alice to lunch friday"),
         ("assistant", "on it"),
-        ("assistant", "To: alice@example.com\nSubject: Lunch Friday?\n\nAre you free at noon?"),
+        ("draft", "Draft r-1\nTo: alice@example.com\nSubject: Lunch Friday?\n\nAre you free at noon?"),
         ("assistant", "want me to send it?"),
         ("user", "send it"),
         ("assistant", "sent!"),

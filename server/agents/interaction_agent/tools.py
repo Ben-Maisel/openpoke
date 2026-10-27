@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
-from ...services.execution import AgentRecord, get_agent_registry, get_execution_agent_logs
+from ...services.execution import AgentRecord, get_agent_registry, get_draft_store, get_execution_agent_logs
 from ...services.execution.matching import DuplicateCandidate, find_possible_duplicates
 from ...services.execution.search import search_agents as rank_agents
 from ..execution_agent.batch_manager import ExecutionBatchManager
@@ -103,24 +103,19 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "send_draft",
-            "description": "Record an email draft so the user can review the exact text.",
+            "description": (
+                "Show the user an email draft that an agent created, by its draft ID. The exact stored text "
+                "(recipients, subject, body) is shown; never write or retype email text yourself."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "to": {
+                    "draft_id": {
                         "type": "string",
-                        "description": "Recipient email for the draft.",
-                    },
-                    "subject": {
-                        "type": "string",
-                        "description": "Email subject for the draft.",
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": "Email body content (plain text).",
+                        "description": "The draft ID from the agent's report, e.g. 'r-12'.",
                     },
                 },
-                "required": ["to", "subject", "body"],
+                "required": ["draft_id"],
                 "additionalProperties": False,
             },
         },
@@ -273,27 +268,26 @@ def send_message_to_user(message: str) -> ToolResult:
     )
 
 
-# Format and record email draft for user review
-def send_draft(
-    to: str,
-    subject: str,
-    body: str,
-) -> ToolResult:
-    """Record a draft update in the conversation log for the interaction agent."""
-    log = get_conversation_log()
+# Show the user a stored draft by ID, exactly as it will be sent
+def send_draft(draft_id: str) -> ToolResult:
+    """Record a stored draft in the conversation log as a draft bubble and mark it shown."""
+    store = get_draft_store()
+    draft = store.get(draft_id) if isinstance(draft_id, str) else None
+    if draft is None or draft.status in ("sent", "deleted"):
+        reason = f"Draft {draft_id!r} is {draft.status}." if draft else f"No draft {draft_id!r} on record."
+        showable = [d.id for d in store.list_drafts(statuses=("open", "shown", "approved"))[:10]]
+        return ToolResult(
+            success=False,
+            payload={"error": f"{reason} Ask the agent that wrote it for the draft ID.", "showable_drafts": showable},
+        )
 
-    message = f"To: {to}\nSubject: {subject}\n\n{body}"
-
-    log.record_reply(message)
-    logger.info(f"Draft recorded for: {to}")
+    store.mark_shown(draft.id)
+    get_conversation_log().record_draft(f"Draft {draft.id}\n{draft.render()}")
+    logger.info(f"Draft {draft.id} shown to the user")
 
     return ToolResult(
         success=True,
-        payload={
-            "status": "draft_recorded",
-            "to": to,
-            "subject": subject,
-        },
+        payload={"status": "draft_shown", "draft_id": draft.id, "to": draft.recipient, "subject": draft.subject},
         recorded_reply=True,
     )
 

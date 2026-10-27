@@ -136,6 +136,11 @@ class ConversationLog:
         timestamp = self._append("poke_reply", content)
         self._working_memory_log.append_entry("poke_reply", content, timestamp)
 
+    def record_draft(self, content: str) -> None:
+        """Record an email draft exactly as the user is shown it (rendered by the UI as a draft bubble)."""
+        timestamp = self._append("draft", content)
+        self._working_memory_log.append_entry("draft", content, timestamp)
+
     def record_wait(self, reason: str) -> None:
         """Record a wait marker that should not reach the user-facing chat history."""
         timestamp = self._append("wait", reason)
@@ -176,6 +181,10 @@ class ConversationLog:
                     ChatMessage(
                         role="assistant", content=payload, timestamp=normalized_timestamp
                     )
+                )
+            elif tag == "draft":
+                messages.append(
+                    ChatMessage(role="draft", content=payload, timestamp=normalized_timestamp)
                 )
             elif tag == "wait":
                 # Wait markers are orchestration metadata and must not surface to the user

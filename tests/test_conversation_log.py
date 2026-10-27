@@ -94,6 +94,14 @@ def test_chat_view_shows_only_user_and_assistant_messages(conversation):
     assert [(m.role, m.content) for m in messages] == [("user", "hi"), ("assistant", "hello!")]
 
 
+def test_drafts_reach_the_chat_as_drafts_and_the_agent_as_draft_entries(conversation, memory):
+    draft = "Draft r-1\nTo: alice@example.com\nSubject: Lunch?\n\nNoon <Fri> & drinks?"
+    conversation.record_draft(draft)
+    assert [(m.role, m.content) for m in conversation.to_chat_messages()] == [("draft", draft)]
+    assert ">Draft r-1\nTo: alice@example.com\nSubject: Lunch?\n\nNoon &lt;Fri&gt; &amp; drinks?</draft>" in conversation.load_transcript()
+    assert [(e.tag, e.payload) for e in memory.load_summary_state().unsummarized_entries] == [("draft", draft)]
+
+
 def test_records_are_mirrored_into_working_memory(conversation, memory):
     conversation.record_user_message("hi")
     conversation.record_reply("hello!")

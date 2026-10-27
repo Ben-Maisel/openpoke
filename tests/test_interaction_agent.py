@@ -310,26 +310,48 @@ def test_missing_api_key_is_rejected_up_front(monkeypatch):
 
 # --- Drafts ----------------------------------------------------------------
 
-async def test_draft_is_shown_with_recipient_subject_and_body(fake_llm):
+def stored_draft(draft_id="r-1", body="Friday at noon?"):
+    return get_draft_store().record(draft_id, agent_id="a1", recipient="alice@example.com", subject="Lunch?", body=body)
+
+
+async def test_a_draft_is_shown_by_id_exactly_as_stored_in_a_draft_bubble(fake_llm):
+    stored_draft(body="Friday at noon?\n\nBen")
     fake_llm.for_interaction(
-        calls(("send_draft", {"to": "alice@example.com", "subject": "Lunch?", "body": "Friday at noon?"}),
-              ("send_message_to_user", {"message": "want me to send it?"})),
+        calls(("send_draft", {"draft_id": "r-1"}), ("send_message_to_user", {"message": "want me to send it?"})),
         reply(""),
     )
-    await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch: draft created")
+    await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch (a1): Draft r-1 to alice@example.com")
     assert chat() == [
-        ("assistant", "To: alice@example.com\nSubject: Lunch?\n\nFriday at noon?"),
+        ("draft", "Draft r-1\nTo: alice@example.com\nSubject: Lunch?\n\nFriday at noon?\n\nBen"),
         ("assistant", "want me to send it?"),
     ]
+    assert get_draft_store().get("r-1").status == "shown"
 
 
-@pytest.mark.xfail(strict=True, reason="P16: drafts are recorded as ordinary replies, so the UI's draft bubble never shows")
-async def test_draft_is_marked_as_a_draft_for_the_ui(fake_llm):
+async def test_unknown_or_deleted_drafts_cannot_be_shown(fake_llm):
+    stored_draft("r-1")
+    stored_draft("r-2")
+    get_draft_store().mark_deleted("r-2")
+    fake_llm.for_interaction(calls(("send_draft", {"draft_id": "r-9"}), ("send_draft", {"draft_id": "r-2"})), reply(""))
+    await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch (a1): drafted")
+    unknown, deleted = [json.loads(m["content"])["error"] for m in fake_llm.calls[-1].messages if m["role"] == "tool"]
+    assert unknown["error"].startswith("No draft 'r-9' on record.") and unknown["showable_drafts"] == ["r-1"]
+    assert deleted["error"].startswith("Draft 'r-2' is deleted.")
+    assert [role for role, _ in chat()] == []
+
+
+async def test_the_interaction_agent_cannot_supply_its_own_email_text(fake_llm):
+    # P27: the old tool took to/subject/body, so the model could show text that was never the real draft.
+    stored_draft("r-1")
     fake_llm.for_interaction(
-        calls(("send_draft", {"to": "alice@example.com", "subject": "Lunch?", "body": "Friday?"})), reply(""),
+        calls(("send_draft", {"to": "alice@example.com", "subject": "Lunch?", "body": "A friendlier rewrite"})),
+        reply(""),
     )
-    await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch: draft created")
-    assert any(role == "draft" for role, _ in chat())
+    await InteractionAgentRuntime().handle_agent_message("[SUCCESS] Lunch (a1): drafted")
+    (result,) = [json.loads(m["content"]) for m in fake_llm.calls[-1].messages if m["role"] == "tool"]
+    assert result["status"] == "error"
+    assert result["error"]["error"].startswith("Missing required arguments: send_draft() got an unexpected keyword")
+    assert chat() == [] and get_draft_store().get("r-1").status == "open"
 
 
 # --- Through the HTTP API, as the browser uses it --------------------------
