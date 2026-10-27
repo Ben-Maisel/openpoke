@@ -28,7 +28,7 @@ from server.agents.interaction_agent.tools import get_tool_schemas
 from server.config import get_settings
 
 from .cases import RoutingCase
-from .dataset import DATA_DIR, DEFAULT_SEED, ROSTER_SIZES, build_roster, load_cases, load_decoys
+from .dataset import DATA_DIR, DEFAULT_SEED, ROSTER_SIZES, build_roster, card_summaries, load_cases, load_decoys
 from .harness import run_decision
 from .scoring import CaseResult, Outcome, classify, is_near_miss
 
@@ -48,6 +48,7 @@ class RunConfig:
     repeats: int = 1
     seed: int = DEFAULT_SEED
     variant: str = "clean"  # "messy" adds duplicate decoy agents from data/decoys.json
+    cards: bool = True      # give agents card summaries from data/cards.json (P2); off reproduces pre-P2 runs
 
 
 # --- Fingerprints: what makes two runs comparable -------------------------------
@@ -78,6 +79,8 @@ def run_identity(config: RunConfig) -> Dict[str, Any]:
         "dataset_sha": dataset_fingerprint(),
         "app_prompt_sha": app_prompt_fingerprint(),
     }
+    if config.cards:
+        identity["cards_sha"] = _sha((DATA_DIR / "cards.json").read_text(encoding="utf-8"))
     if config.variant != "clean":  # clean runs keep the original identity shape
         identity["variant"] = config.variant
         identity["decoys_sha"] = _sha((DATA_DIR / "decoys.json").read_text(encoding="utf-8"))
@@ -153,6 +156,7 @@ async def run_eval(
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     decoys = load_decoys() if config.variant == "messy" else {}
+    summaries = card_summaries() if config.cards else {}
     rosters = {
         c.id: {str(size): build_roster(c, size, config.seed, decoys.get(c.id, ())) for size in config.sizes}
         for c in cases
@@ -172,7 +176,7 @@ async def run_eval(
         roster = rosters[case.id][str(size)]
         async with semaphore:
             started = time.monotonic()
-            decision = await run_decision(case, roster, model=config.model, api_key=api_key)
+            decision = await run_decision(case, roster, model=config.model, api_key=api_key, summaries=summaries)
             duration = time.monotonic() - started
         outcome = classify(case.expect, decision.routes, roster, decision.error)
         record = {
@@ -213,6 +217,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m evals.routing", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--label", help="results folder name (default: 'baseline' or 'smoke', plus '-messy')")
+    parser.add_argument("--no-cards", action="store_true", help="leave agent card summaries empty (pre-P2 setup)")
     parser.add_argument("--variant", choices=["clean", "messy"], default="clean",
                         help="'messy' adds two duplicate decoy agents per case (see data/decoys.json)")
     parser.add_argument("--model", help="OpenRouter model id (default: the app's interaction agent model)")
@@ -233,7 +238,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if args.smoke:
             cases, sizes = select_smoke_cases(cases), sizes[:2]
         config = RunConfig(label=label, model=args.model or settings.interaction_agent_model,
-                           sizes=sizes, repeats=args.repeats, seed=args.seed, variant=args.variant)
+                           sizes=sizes, repeats=args.repeats, seed=args.seed, variant=args.variant,
+                           cards=not args.no_cards)
         stats = asyncio.run(run_eval(config, cases, out_dir, api_key=settings.openrouter_api_key,
                                      concurrency=args.concurrency))
         print(f"[{label}] ran {stats['ran']} ({stats['errors']} API errors), skipped {stats['skipped']} already logged")

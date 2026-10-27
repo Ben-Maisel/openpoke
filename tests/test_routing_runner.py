@@ -73,7 +73,7 @@ def test_meta_and_rosters_record_exactly_what_ran(responder, tmp_path):
     run(TWO_CASES, tmp_path)
     meta = json.loads((tmp_path / "meta.json").read_text())
     assert meta["identity"]["model"] == "fake/model"
-    assert set(meta["identity"]) == {"model", "seed", "dataset_sha", "app_prompt_sha"}
+    assert set(meta["identity"]) == {"model", "seed", "dataset_sha", "app_prompt_sha", "cards_sha"}
     assert meta["case_ids"] == [c.id for c in TWO_CASES] and meta["sizes"] == [10, 50]
     rosters = json.loads((tmp_path / "rosters.json").read_text())
     assert len(rosters["explicit-vercel-offer"]["50"]) == 50
@@ -118,11 +118,27 @@ def test_refuses_to_mix_a_different_setup_into_an_existing_run(responder, tmp_pa
         run(TWO_CASES, tmp_path, RunConfig(label="t", model="fake/model", sizes=(10, 50), seed=1))
 
 
-def test_clean_identity_keeps_its_original_shape():
-    # Adding variants must not change the identity of clean runs like the committed baseline.
+def test_clean_identity_without_cards_keeps_its_original_shape():
+    # Pre-P2 runs (no cards) keep the identity shape the committed baselines were recorded with.
     from evals.routing.run import run_identity
 
-    assert set(run_identity(CONFIG)) == {"model", "seed", "dataset_sha", "app_prompt_sha"}
+    no_cards = RunConfig(label="t", model="fake/model", sizes=(10, 50), cards=False)
+    assert set(run_identity(no_cards)) == {"model", "seed", "dataset_sha", "app_prompt_sha"}
+    assert "cards_sha" in run_identity(CONFIG)
+
+
+def test_cards_reach_the_prompt_and_can_be_turned_off(monkeypatch, tmp_path):
+    seen = []
+
+    async def capture(*, model, messages, system=None, api_key=None, tools=None, base_url=None):
+        seen.append(messages[0]["content"])
+        return reply("ok")
+
+    monkeypatch.setattr(harness_module, "request_chat_completion", capture)
+    run([CASES["explicit-vercel-offer"]], tmp_path / "cards", RunConfig(label="t", model="m", sizes=(10,)))
+    run([CASES["explicit-vercel-offer"]], tmp_path / "plain", RunConfig(label="t", model="m", sizes=(10,), cards=False))
+    card = "asked the recruiter for the final compensation breakdown in writing"
+    assert card in seen[0] and card not in seen[1]
 
 
 def test_messy_variant_puts_decoys_in_the_rosters_and_is_a_distinct_run(responder, tmp_path):

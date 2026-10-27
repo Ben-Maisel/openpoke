@@ -143,6 +143,14 @@ Each step builds on the previous ones. Related problems that touch the same code
     - **Tests:** 670 pass, with new ones for the bounded working set (50 agents → 5 shown + "45 others"), an older matching agent shown with its full card, `search_agents` hits and misses, and the harness equivalents.
     - **Live (Haiku), 31 agents:** "did tom ever get back to me about the lease?" routed straight to the oldest agent, whose card (not its name) mentions Tom.
   - [ ] P2c: give eval roster agents realistic cards, then rerun both evals
+    - [x] **Cards written, pending review.** `evals/routing/data/cards.json` holds:
+      - hand-written cards for all 28 case agents (correct answers and confusers) and all 48 messy-roster decoys
+      - a status-line pattern per naming template for the 949 padding agents
+      - **Guards:** cards are written as status notes rather than copies of the question; decoy cards share their topic's words but describe different or finished work; padding cards never mention a case's competing terms (0 leaks).
+      - **Unchanged:** roster names are byte-identical to before, so the baselines stay comparable.
+      - **Runner:** uses cards by default, records `cards_sha` in the run identity, and `--no-cards` reproduces the pre-P2 setup. Reports state whether cards were used.
+      - **Tests:** 91 new checks covering coverage, fairness, decoys differing from the right card, and no parroting.
+    - [ ] Rerun clean and messy (`p2`, `p2-messy`) after review
 - **Solution:** —
 
 ### P3: Agents are never retired

@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 import random
 import re
+import zlib
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 from .cases import Expectation, RoutingCase
 
@@ -41,23 +42,48 @@ def load_decoys(path: Path = DATA_DIR / "decoys.json") -> Dict[str, List[str]]:
     return json.loads(path.read_text(encoding="utf-8"))["decoys"]
 
 
+# Every (name template, fields) the world can produce; a name may come from more than one
+def _pool_entries() -> List[Tuple[str, Dict[str, str]]]:
+    world = load_world()
+    t = world["templates"]
+    entries: List[Tuple[str, Dict[str, str]]] = []
+    for full in world["people"]:
+        first = full.split()[0]
+        entries += [(x, {"first": first}) for x in t["person_first"]]
+        entries += [(x, {"first": first, "full": full}) for x in t["person_full"]]
+        entries += [(x, {"topic": topic, "first": first}) for x in t["work_topic"] for topic in world["work_topics"]]
+    entries += [(x, {"company": c, "thing": th}) for x in t["company"] for c in world["companies"]
+                for th in world["company_things"]]
+    entries += [(x, {"reminder": r}) for x in t["reminder"] for r in world["personal_reminders"]]
+    entries += [(x, {"family": f}) for x in t["family"] for f in world["family"]]
+    entries += [(x, {"city": c}) for x in t["city"] for c in world["cities"]]
+    return entries
+
+
 # Every distinct agent name the world's templates can produce, sorted for determinism
 @lru_cache(maxsize=1)
 def distractor_pool() -> List[str]:
-    world = load_world()
-    t = world["templates"]
-    names = set()
-    for full in world["people"]:
-        first = full.split()[0]
-        names.update(x.format(first=first) for x in t["person_first"])
-        names.update(x.format(first=first, full=full) for x in t["person_full"])
-        names.update(x.format(topic=topic, first=first) for x in t["work_topic"] for topic in world["work_topics"])
-    for company in world["companies"]:
-        names.update(x.format(company=company, thing=thing) for x in t["company"] for thing in world["company_things"])
-    names.update(x.format(reminder=r) for x in t["reminder"] for r in world["personal_reminders"])
-    names.update(x.format(family=f) for x in t["family"] for f in world["family"])
-    names.update(x.format(city=c) for x in t["city"] for c in world["cities"])
-    return sorted(names)
+    return sorted({template.format(**fields) for template, fields in _pool_entries()})
+
+
+def load_cards(path: Path = DATA_DIR / "cards.json") -> Dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# Card summary for every agent name the eval can place in a roster: hand-written cards for case
+# agents and decoys, a generated status line for padding agents (variant picked by a stable hash)
+@lru_cache(maxsize=1)
+def card_summaries() -> Dict[str, str]:
+    cards = load_cards()
+    patterns = cards["distractor_summaries"]
+    summaries: Dict[str, str] = {}
+    for template, fields in _pool_entries():
+        name = template.format(**fields)
+        if name not in summaries:
+            variants = patterns[template]
+            summaries[name] = variants[zlib.crc32(name.encode("utf-8")) % len(variants)].format(**fields)
+    summaries.update(cards["cards"])
+    return summaries
 
 
 # True if any term starts a word in `name` (case-insensitive); over-matching only shrinks the pool

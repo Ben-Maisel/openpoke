@@ -155,3 +155,43 @@ def test_messy_rosters_are_fair_and_nested(case):
         assert not [n for n in padding if mentions(n, case.exclude)]
     for smaller, larger in zip(rosters, rosters[1:]):
         assert set(smaller) <= set(larger)
+
+
+# --- Agent cards (P2) -----------------------------------------------------------------
+
+from evals.routing.dataset import card_summaries, load_cards  # noqa: E402
+
+CARDS = card_summaries()
+HAND_WRITTEN = load_cards()["cards"]
+
+
+def test_every_case_agent_and_decoy_has_a_hand_written_card():
+    needed = {n for c in CASES for n in c.required_agents} | {n for names in DECOYS.values() for n in names}
+    assert needed <= set(HAND_WRITTEN)
+    assert all(HAND_WRITTEN[n].strip() for n in needed)
+
+
+def test_every_padding_agent_gets_a_card():
+    assert set(distractor_pool()) <= set(CARDS)
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.id in DECOYS], ids=lambda c: c.id)
+def test_decoy_cards_differ_from_the_right_agents_card(case):
+    right = HAND_WRITTEN[case.expect.agents[0]]
+    assert all(HAND_WRITTEN[d] != right for d in DECOYS[case.id])
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.id)
+def test_padding_cards_never_mention_a_competing_answer(case):
+    # Same fairness rule as for names: padding must not add a second reasonable answer via its card.
+    fixed = set(case.required_agents) | set(DECOYS.get(case.id, ()))
+    for decoys in ((), tuple(DECOYS.get(case.id, ()))):
+        for name in build_roster(case, 500, decoys=decoys):
+            if name not in fixed:
+                assert not mentions(CARDS[name], case.exclude), (name, CARDS[name])
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.expect.kind == "agent"], ids=lambda c: c.id)
+def test_right_agents_card_does_not_parrot_the_question(case):
+    # Cards are written as status notes, not copies of the user's message.
+    assert case.message.lower().rstrip("?!. ") not in HAND_WRITTEN[case.expect.agents[0]].lower()
