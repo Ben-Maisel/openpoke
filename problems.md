@@ -45,7 +45,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟢 Solved |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
-| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟡 Mostly solved (eval pending) |
+| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟢 Solved |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
@@ -234,6 +234,28 @@ Each step builds on the previous ones. Related problems that touch the same code
       - ties, caps and skipping earlier recalls
       - a real runtime run that recalls a door code from a full email mid-task
     - Runtime tests check two things. A worker sees "Open drafts: r-1" in its next run. With a 300-run journal, its prompt history stays within the budget, still contains its card, and shows the newest run but not the first.
+  - **Evaluated with a real model** ([evals/memory](evals/memory), Haiku 5.5):
+    - **Setup:**
+      - One long-lived worker, "Denver offsite trip", with 20 questions about its own past: old details buried deep in emails, preferences, facts that later changed, open items and recent details.
+      - The planted facts stay fixed while filler runs grow the journal to 20, 60 or 200 runs.
+      - **before** is the original app: the upstream prompt, the whole journal, the 200/500-character cuts, no recall.
+      - **after** is the current app, with a card built by running the real refresh once per run.
+      - Live tools fail in both conditions, so answers must come from memory.
+      - Scoring is deterministic: does the answer contain the expected string?
+
+      | Runs in journal | before | after (first run) | after (recall v2) | before prompt tokens | after prompt tokens |
+      |---:|---:|---:|---:|---:|---:|
+      | 20 | 60% | 100% | 100% | 11.7k | 11.0k |
+      | 60 | 60% | 95% | 90% | 25.1k | 12.4k |
+      | 200 | 60% | 80% | 100% | 71.7k | 12.3k |
+    - **before** loses every deep detail to the old cuts at every length, and its prompt grows without bound.
+    - **after** stays at about 12k tokens.
+    - The first run's misses at 200 runs had two causes, both fixed in recall v2:
+      - Recall searches found the right record but the worker never opened it, so each match now shows the passage of the full text that matched, plus its ref.
+      - "hotel budget" didn't match "keep hotels under $250", so plural endings are now ignored.
+    - The two remaining misses at 60 runs are the worker not using recall, or giving up after one search. With 20 questions the confidence intervals overlap, so treat 90% vs 100% as noise.
+    - **Finding:** the rolling card drifts over 200 refreshes. It dropped the $250 preference, called the hotel "unverified", and picked up filler noise. Recall is the backstop that makes this survivable. A sturdier card, for example one that pins user preferences, is future work.
+    - Results: [memory](evals/results/memory/report.md) (both conditions), [memory-v2](evals/results/memory-v2/report.md) (after only, same cards).
 
 ### P6: Logged tool data is blindly truncated
 - **Where:** [server/agents/execution_agent/agent.py:121-123](server/agents/execution_agent/agent.py#L121-L123)

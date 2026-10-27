@@ -1,0 +1,48 @@
+{
+  "identity": {
+    "model": "anthropic/claude-haiku-5.5",
+    "card_model": "anthropic/claude-haiku-5.5",
+    "seed": 20261027,
+    "dataset_sha": "49f54a9fdce4d50a",
+    "app_sha": "2a178a3e00e2c83f",
+    "legacy_sha": "856e56aa75575344",
+    "history_token_budget": 4000
+  },
+  "label": "memory-v2",
+  "created_at": "2026-10-27T17:13:32+00:00",
+  "lengths": [
+    20,
+    60,
+    200
+  ],
+  "conditions": [
+    "after"
+  ],
+  "repeats": 1,
+  "question_ids": [
+    "flight-confirmation",
+    "flight-seat",
+    "flight-arrival",
+    "offsite-room",
+    "flight-number",
+    "priya-email",
+    "dinner",
+    "seat-preference",
+    "hotel-budget",
+    "expense-cc",
+    "hotel-name",
+    "hotel-confirmation",
+    "hotel-rate",
+    "hotel-address",
+    "checkin-reminder",
+    "open-draft",
+    "expense-total",
+    "ride-time",
+    "ride-address",
+    "deleted-draft"
+  ],
+  "git_commit": "2a3e8fae74903db7d178c1e53b9ec4b3309fa143",
+  "git_dirty": true,
+  "last_started_at": "2026-10-27T17:17:51+00:00",
+  "last_finished_at": "2026-10-27T17:18:36+00:00"
+}
