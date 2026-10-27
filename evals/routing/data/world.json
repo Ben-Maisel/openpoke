@@ -1,0 +1,39 @@
+{
+  "_about": "The fictional user 'Sam Rivera', a product manager. Every distractor agent name is generated from this vocabulary using the templates below, which mimic how the interaction agent names agents (its prompt's examples: 'Vercel Job Offer', 'Email to Sharanjeet'). Names deliberately clash (two Alices, two Davids) to make routing realistic and hard.",
+  "people": [
+    "Alice Chen", "Alice Wong", "David Park", "David Kim", "Priya Patel", "Marcus Johnson",
+    "Sofia Garcia", "Ben Carter", "Hannah Lee", "Omar Haddad", "Grace Liu", "Tom Becker",
+    "Nina Rossi", "Jake Miller", "Emma Novak", "Raj Mehta", "Chloe Martin", "Leo Santos",
+    "Maya Cohen", "Ethan Brooks", "Zoe Turner", "Kevin O'Brien", "Laura Schmidt", "Victor Huang",
+    "Isabel Reyes", "Noah Fischer", "Ava Thompson", "Lucas Moreau", "Sara Ali", "Daniel Wu"
+  ],
+  "family": ["Mom", "Dad", "Grandma", "Aunt Rosa"],
+  "companies": [
+    "Vercel", "Stripe", "Figma", "Notion", "Linear", "Acme Corp", "Globex", "Initech", "Delta",
+    "United", "Airbnb", "Comcast", "Chase", "Geico", "WeWork", "Equinox", "Whole Foods", "DoorDash"
+  ],
+  "company_things": [
+    "Invoice", "Renewal", "Support Ticket", "Job Offer", "Interview", "Contract", "Partnership",
+    "Refund", "Account Setup", "Onboarding", "Billing Issue", "Order"
+  ],
+  "work_topics": [
+    "Q3 Report", "Q4 Planning", "Launch Plan", "Offsite", "Budget Review", "Hiring Pipeline",
+    "Board Deck", "Customer Escalation", "Sprint Retro", "OKRs", "Design Review", "Security Audit",
+    "Pricing Update", "Roadmap", "API Migration"
+  ],
+  "personal_reminders": [
+    "Dentist Appointment", "Car Service", "Haircut", "Vet Appointment", "Rent Payment",
+    "Passport Renewal", "Tax Filing", "Book Club", "Yoga Class", "Flight Check-in",
+    "Electric Bill", "Prescription Refill", "Trash Day", "Weekly Standup Notes"
+  ],
+  "cities": ["Tokyo", "Lisbon", "Austin", "Chicago", "Boston", "Seattle", "Miami", "Denver", "Mexico City"],
+  "templates": {
+    "person_first": ["Email to {first}", "Lunch with {first}", "Coffee with {first}", "Follow up with {first}"],
+    "person_full": ["Call with {full}", "Meeting with {full}", "Email to {full}", "{first}'s Birthday"],
+    "company": ["{company} {thing}"],
+    "work_topic": ["{topic} Follow-up", "{topic} Draft", "{topic} with {first}"],
+    "reminder": ["{reminder} Reminder"],
+    "family": ["Call {family} Reminder", "{family}'s Birthday Gift", "Email to {family}"],
+    "city": ["Trip to {city}", "{city} Flights", "{city} Hotel Booking"]
+  }
+}

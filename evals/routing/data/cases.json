@@ -1,0 +1,366 @@
+{
+  "_about": "Hand-labelled routing cases. 'expect' is the unambiguous right answer under the app's own system prompt: kind 'agent' (route to one of 'agents'), 'new' (create a new agent), or 'none' (just reply). 'required_agents' are placed in every roster (correct answers plus deliberate confusers). 'exclude' lists terms no padding agent may contain, so padding never adds a second reasonable answer. Debatable cases were left out on purpose.",
+  "cases": [
+    {
+      "id": "explicit-landlord-lease",
+      "category": "explicit_followup",
+      "message": "did the landlord ever get back to me about renewing the lease?",
+      "expect": {"kind": "agent", "agents": ["Lease Renewal with Landlord"]},
+      "required_agents": ["Lease Renewal with Landlord"],
+      "exclude": ["landlord", "lease", "rent"]
+    },
+    {
+      "id": "explicit-vercel-offer",
+      "category": "explicit_followup",
+      "message": "any update on the vercel offer? did they send the final numbers?",
+      "expect": {"kind": "agent", "agents": ["Vercel Job Offer"]},
+      "required_agents": ["Vercel Job Offer"],
+      "exclude": ["vercel", "offer"]
+    },
+    {
+      "id": "explicit-dentist-when",
+      "category": "explicit_followup",
+      "message": "when is my dentist appointment again?",
+      "expect": {"kind": "agent", "agents": ["Dentist Appointment Reminder"]},
+      "required_agents": ["Dentist Appointment Reminder"],
+      "exclude": ["dentist"]
+    },
+    {
+      "id": "explicit-q3-priya",
+      "category": "explicit_followup",
+      "message": "has priya sent over her section of the q3 report yet?",
+      "expect": {"kind": "agent", "agents": ["Q3 Report with Priya"]},
+      "required_agents": ["Q3 Report with Priya"],
+      "exclude": ["q3", "priya"]
+    },
+    {
+      "id": "explicit-tokyo-hotel",
+      "category": "explicit_followup",
+      "message": "what hotel did we end up booking for the tokyo trip?",
+      "expect": {"kind": "agent", "agents": ["Tokyo Trip Planning"]},
+      "required_agents": ["Tokyo Trip Planning"],
+      "exclude": ["tokyo"]
+    },
+    {
+      "id": "explicit-stripe-refund",
+      "category": "explicit_followup",
+      "message": "did stripe ever refund that duplicate charge?",
+      "expect": {"kind": "agent", "agents": ["Stripe Duplicate Charge Refund"]},
+      "required_agents": ["Stripe Duplicate Charge Refund"],
+      "exclude": ["stripe", "refund", "charge"]
+    },
+    {
+      "id": "explicit-gym-fee",
+      "category": "explicit_followup",
+      "message": "remind me what the cancellation fee was for the gym",
+      "expect": {"kind": "agent", "agents": ["Equinox Membership Cancellation"]},
+      "required_agents": ["Equinox Membership Cancellation"],
+      "exclude": ["equinox", "gym", "membership"]
+    },
+    {
+      "id": "explicit-marcus-intro",
+      "category": "explicit_followup",
+      "message": "did marcus reply to that intro email with grace?",
+      "expect": {"kind": "agent", "agents": ["Intro Marcus to Grace"]},
+      "required_agents": ["Intro Marcus to Grace"],
+      "exclude": ["marcus", "grace"]
+    },
+    {
+      "id": "explicit-car-claim",
+      "category": "explicit_followup",
+      "message": "what's the status of my car insurance claim?",
+      "expect": {"kind": "agent", "agents": ["Geico Car Insurance Claim"]},
+      "required_agents": ["Geico Car Insurance Claim"],
+      "exclude": ["geico", "insurance", "claim", "car"]
+    },
+    {
+      "id": "explicit-board-deck",
+      "category": "explicit_followup",
+      "message": "is the board deck ready for hannah to review yet?",
+      "expect": {"kind": "agent", "agents": ["Board Deck Review with Hannah"]},
+      "required_agents": ["Board Deck Review with Hannah"],
+      "exclude": ["board deck", "hannah"]
+    },
+
+    {
+      "id": "implicit-send-it",
+      "category": "implicit_followup",
+      "message": "looks good, send it",
+      "expect": {"kind": "agent", "agents": ["Reschedule 1:1 with Omar"]},
+      "required_agents": ["Reschedule 1:1 with Omar"],
+      "history": [
+        ["user_message", "email omar and ask to move our 1:1 to thursday"],
+        ["poke_reply", "on it"],
+        ["agent_message", "[SUCCESS] Reschedule 1:1 with Omar: Draft created. To: omar.haddad@globex.com Subject: Moving our 1:1 Body: Hi Omar, could we move our 1:1 to Thursday at the same time? Thanks, Sam"],
+        ["poke_reply", "To: omar.haddad@globex.com\nSubject: Moving our 1:1\n\nHi Omar, could we move our 1:1 to Thursday at the same time? Thanks, Sam"],
+        ["poke_reply", "want me to send it?"]
+      ],
+      "exclude": ["omar", "1:1"]
+    },
+    {
+      "id": "implicit-ask-her",
+      "category": "implicit_followup",
+      "message": "ok ask her when the quote will be ready",
+      "expect": {"kind": "agent", "agents": ["Offsite Venue with Sofia"]},
+      "required_agents": ["Offsite Venue with Sofia"],
+      "history": [
+        ["user_message", "can you check if sofia replied about the venue for the offsite"],
+        ["poke_reply", "checking"],
+        ["agent_message", "[SUCCESS] Offsite Venue with Sofia: Sofia replied yesterday suggesting the Riverside venue; she is waiting on a quote from them."],
+        ["poke_reply", "sofia's leaning riverside, quote still pending"]
+      ],
+      "exclude": ["sofia", "offsite", "venue"]
+    },
+    {
+      "id": "implicit-make-it-7",
+      "category": "implicit_followup",
+      "message": "actually make that 7",
+      "expect": {"kind": "agent", "agents": ["Call Mom Reminder"]},
+      "required_agents": ["Call Mom Reminder"],
+      "history": [
+        ["user_message", "remind me to call mom on sunday at 6pm"],
+        ["poke_reply", "on it"],
+        ["agent_message", "[SUCCESS] Call Mom Reminder: Trigger 12 created for Sunday 18:00."],
+        ["poke_reply", "done, sunday at 6"]
+      ],
+      "exclude": ["mom"]
+    },
+    {
+      "id": "implicit-friendlier",
+      "category": "implicit_followup",
+      "message": "make it a bit friendlier and shorter",
+      "expect": {"kind": "agent", "agents": ["Overdue Invoice Email to Nina"]},
+      "required_agents": ["Overdue Invoice Email to Nina"],
+      "history": [
+        ["user_message", "draft an email to nina about the invoice that's 30 days overdue"],
+        ["poke_reply", "drafting"],
+        ["agent_message", "[SUCCESS] Overdue Invoice Email to Nina: Draft created. To: nina.rossi@initech.com Subject: Overdue invoice #4471 Body: Nina, invoice #4471 is now 30 days past due. Please arrange payment immediately. Regards, Sam"],
+        ["poke_reply", "To: nina.rossi@initech.com\nSubject: Overdue invoice #4471\n\nNina, invoice #4471 is now 30 days past due. Please arrange payment immediately. Regards, Sam"],
+        ["poke_reply", "a little stern. send as is?"]
+      ],
+      "exclude": ["nina", "invoice"]
+    },
+    {
+      "id": "implicit-cancel-that",
+      "category": "implicit_followup",
+      "message": "cancel that reminder",
+      "expect": {"kind": "agent", "agents": ["Weekly Standup Notes Reminder"]},
+      "required_agents": ["Weekly Standup Notes Reminder"],
+      "history": [
+        ["user_message", "remind me every monday at 9 to send standup notes"],
+        ["poke_reply", "on it"],
+        ["agent_message", "[SUCCESS] Weekly Standup Notes Reminder: Recurring trigger 7 created, Mondays 09:00."],
+        ["poke_reply", "set, mondays at 9"]
+      ],
+      "exclude": ["standup"]
+    },
+    {
+      "id": "implicit-cc-david",
+      "category": "implicit_followup",
+      "message": "cc david kim on it too",
+      "expect": {"kind": "agent", "agents": ["Design Review Reply to Ben"]},
+      "required_agents": ["Design Review Reply to Ben"],
+      "history": [
+        ["user_message", "reply to ben's design review email saying the new nav looks great"],
+        ["poke_reply", "on it"],
+        ["agent_message", "[SUCCESS] Design Review Reply to Ben: Draft reply created on thread t-88. To: ben.carter@figma.com Subject: Re: Design review Body: Ben, the new nav looks great. Ship it! Sam"],
+        ["poke_reply", "To: ben.carter@figma.com\nSubject: Re: Design review\n\nBen, the new nav looks great. Ship it! Sam"],
+        ["poke_reply", "good to send?"]
+      ],
+      "exclude": ["ben", "design review"]
+    },
+    {
+      "id": "implicit-did-they-confirm",
+      "category": "implicit_followup",
+      "message": "did they confirm?",
+      "expect": {"kind": "agent", "agents": ["Nopa Dinner Reservation"]},
+      "required_agents": ["Nopa Dinner Reservation"],
+      "history": [
+        ["user_message", "email nopa and ask for a table for 4 on friday at 8"],
+        ["poke_reply", "on it"],
+        ["agent_message", "[SUCCESS] Nopa Dinner Reservation: Sent reservation request to reservations@nopa.com for 4 people, Friday 20:00."],
+        ["poke_reply", "request sent to nopa for friday at 8, will let you know"]
+      ],
+      "exclude": ["nopa", "reservation", "dinner"]
+    },
+    {
+      "id": "implicit-forward-it",
+      "category": "implicit_followup",
+      "message": "forward that to my lawyer jake",
+      "expect": {"kind": "agent", "agents": ["Acme Contract Review"]},
+      "required_agents": ["Acme Contract Review"],
+      "history": [
+        ["user_message", "find the latest contract laura sent from acme"],
+        ["poke_reply", "looking"],
+        ["agent_message", "[SUCCESS] Acme Contract Review: Found it. Message m-5512 from laura.schmidt@acme.com on Oct 22, subject 'Acme MSA v3 for signature', with attachment Acme_MSA_v3.pdf."],
+        ["poke_reply", "found it: 'acme msa v3 for signature' from laura on oct 22, pdf attached"]
+      ],
+      "exclude": ["acme", "contract", "jake", "laura"]
+    },
+
+    {
+      "id": "disambig-alice-wong",
+      "category": "disambiguation",
+      "message": "did alice wong confirm lunch for friday?",
+      "expect": {"kind": "agent", "agents": ["Lunch with Alice Wong"]},
+      "required_agents": ["Lunch with Alice Chen", "Lunch with Alice Wong"],
+      "exclude": ["alice"]
+    },
+    {
+      "id": "disambig-david-kim",
+      "category": "disambiguation",
+      "message": "what did david kim say about the pricing update?",
+      "expect": {"kind": "agent", "agents": ["Pricing Update with David Kim"]},
+      "required_agents": ["Pricing Update with David Park", "Pricing Update with David Kim"],
+      "exclude": ["david", "pricing"]
+    },
+    {
+      "id": "disambig-q4-not-q3",
+      "category": "disambiguation",
+      "message": "how's the q4 planning doc coming along?",
+      "expect": {"kind": "agent", "agents": ["Q4 Planning Doc"]},
+      "required_agents": ["Q3 Report with Priya", "Q4 Planning Doc"],
+      "exclude": ["q3", "q4", "planning"]
+    },
+    {
+      "id": "disambig-lisbon-hotel",
+      "category": "disambiguation",
+      "message": "did the lisbon hotel send a confirmation number?",
+      "expect": {"kind": "agent", "agents": ["Lisbon Hotel Booking"]},
+      "required_agents": ["Lisbon Flights", "Lisbon Hotel Booking"],
+      "exclude": ["lisbon"]
+    },
+    {
+      "id": "disambig-figma-renewal",
+      "category": "disambiguation",
+      "message": "is the figma renewal going through at the old price?",
+      "expect": {"kind": "agent", "agents": ["Figma Subscription Renewal"]},
+      "required_agents": ["Stripe Subscription Renewal", "Figma Subscription Renewal"],
+      "exclude": ["renewal", "figma", "stripe"]
+    },
+    {
+      "id": "disambig-mom-gift",
+      "category": "disambiguation",
+      "message": "did you order the flowers for mom's birthday?",
+      "expect": {"kind": "agent", "agents": ["Mom's Birthday Gift"]},
+      "required_agents": ["Call Mom Reminder", "Mom's Birthday Gift"],
+      "exclude": ["mom"]
+    },
+
+    {
+      "id": "new-denver-flights",
+      "category": "new_task",
+      "message": "find me flights to denver for next weekend",
+      "expect": {"kind": "new"},
+      "exclude": ["denver", "flight"]
+    },
+    {
+      "id": "new-leaking-sink",
+      "category": "new_task",
+      "message": "my sink is leaking, can you email the building manager?",
+      "expect": {"kind": "new"},
+      "exclude": ["sink", "leak", "building", "manager", "plumber"]
+    },
+    {
+      "id": "new-headphones-receipt",
+      "category": "new_task",
+      "message": "find the receipt for the headphones i bought at best buy",
+      "expect": {"kind": "new"},
+      "exclude": ["headphone", "best buy", "receipt"]
+    },
+    {
+      "id": "new-ethan-wedding",
+      "category": "new_task",
+      "message": "rsvp yes to ethan's wedding",
+      "expect": {"kind": "new"},
+      "exclude": ["ethan", "wedding", "rsvp"]
+    },
+    {
+      "id": "new-water-plants",
+      "category": "new_task",
+      "message": "remind me to water the plants every tuesday",
+      "expect": {"kind": "new"},
+      "exclude": ["plant", "water"]
+    },
+    {
+      "id": "new-linear-access",
+      "category": "new_task",
+      "message": "email IT and ask them to give me access to linear",
+      "expect": {"kind": "new"},
+      "exclude": ["linear", "access"]
+    },
+    {
+      "id": "new-zoe-recommendation",
+      "category": "new_task",
+      "message": "draft a linkedin recommendation for zoe turner",
+      "expect": {"kind": "new"},
+      "exclude": ["zoe", "linkedin", "recommendation"]
+    },
+    {
+      "id": "new-passport-renewal",
+      "category": "new_task",
+      "message": "my passport expires in march, find out what i need to renew it",
+      "expect": {"kind": "new"},
+      "exclude": ["passport"]
+    },
+    {
+      "id": "new-important-today",
+      "category": "new_task",
+      "message": "what are the most important emails i got today?",
+      "expect": {"kind": "new"},
+      "exclude": ["inbox", "important", "today", "triage"]
+    },
+    {
+      "id": "new-noah-api",
+      "category": "new_task",
+      "message": "set up a meeting with noah fischer next week about the api migration",
+      "expect": {"kind": "new"},
+      "exclude": ["noah", "api"]
+    },
+
+    {
+      "id": "none-thanks",
+      "category": "no_delegation",
+      "message": "thanks!",
+      "expect": {"kind": "none"}
+    },
+    {
+      "id": "none-haha",
+      "category": "no_delegation",
+      "message": "haha nice",
+      "expect": {"kind": "none"}
+    },
+    {
+      "id": "none-thats-all",
+      "category": "no_delegation",
+      "message": "ok cool, that's all for now",
+      "expect": {"kind": "none"}
+    },
+    {
+      "id": "none-goodnight",
+      "category": "no_delegation",
+      "message": "good night!",
+      "expect": {"kind": "none"}
+    },
+    {
+      "id": "none-youre-the-best",
+      "category": "no_delegation",
+      "message": "you're the best lol",
+      "expect": {"kind": "none"}
+    },
+    {
+      "id": "none-answer-in-history",
+      "category": "no_delegation",
+      "message": "wait what time did you say?",
+      "expect": {"kind": "none"},
+      "required_agents": ["Dentist Appointment Reminder"],
+      "history": [
+        ["user_message", "when's my dentist appointment?"],
+        ["poke_reply", "checking"],
+        ["agent_message", "[SUCCESS] Dentist Appointment Reminder: The appointment is Tuesday Nov 3 at 2:00pm with Dr. Lee."],
+        ["poke_reply", "tuesday nov 3, 2pm with dr. lee"]
+      ],
+      "exclude": ["dentist"]
+    }
+  ]
+}
