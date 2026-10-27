@@ -19,6 +19,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 1. **P8:** Windows crash (nothing runs without this)
 2. **P13:** test harness, plus a *baseline* eval of today's routing, so every later fix has a before/after number
+   - **P26** (+ the env-config half of **P15**): the default model is retired. This blocks every real-LLM run, so it's fixed before the baseline eval.
    - **P21**, **P22**, **P23**, **P24**, **P25:** bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
 3. **P1:** agent registry with stable IDs and agent cards (foundation for all of area A)
 4. **P4** + **P14:** ID-based routing and an explicit "create agent" action; rewrite the prompts that refer to it
@@ -65,6 +66,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
+| P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
 
 ---
 
@@ -203,6 +205,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P15: One expensive model for everything
 - **Where:** [server/config.py:54](server/config.py#L54)
 - **What:** all five model slots, including the yes/no email importance classifier, use Claude Sonnet 4. Model names are hard-coded rather than read from the environment.
+- **Progress:** models are now configurable through the environment, and the default is the much cheaper Haiku 5.5 (see P26). What remains is evaluating whether any slot needs a stronger model, and measuring cost per request.
 - **Solution:** —
 
 ### P16: Draft handling
@@ -267,6 +270,19 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **\*Severity caveat:** confirmed against the standard Gmail API payload shape. How often it bites depends on exactly what Composio returns, which will be verified with a live fetch once Gmail is connected.
 - **Found by:** four strict expected failures in `tests/test_email_processing.py`.
 - **Solution:** —
+
+### P26: Default model no longer exists
+- **Where:** [server/config.py](server/config.py) (all five `*_model` settings)
+- **What:** every model slot is hard-coded to `anthropic/claude-sonnet-4`. OpenRouter has retired that model and now returns `404: no provider serves this model anymore`. As shipped, the interaction agent, execution agents, search task, summarizer, and email classifier all fail on their first call, so the app does nothing for anyone who clones it today. The model can't be changed without editing code (see P15).
+- **Found by:** the first live API call while setting up the P13 baseline eval (2026-10-26).
+- **Solution:**
+  - **Configurable models.** Each model slot in `server/config.py` is now resolved when `Settings` is built: `OPENPOKE_<SLOT>_MODEL` first, then `OPENPOKE_MODEL` (one setting for every slot), then `DEFAULT_MODEL`. This also solves the "hard-coded" half of P15.
+  - **New default.** `anthropic/claude-haiku-5.5` ($0.10 / $0.50 per million input/output tokens) replaces the retired `anthropic/claude-sonnet-4` ($3 / $15). It's a newer generation and roughly 30× cheaper.
+  - **Documentation.** The variables are documented in `.env.example`.
+  - **Verified:**
+    - `tests/test_config.py`, 11 tests: the default, the global override, each per-slot override, blank values, and constructor precedence.
+    - A live call through the app's OpenRouter client.
+    - A live end-to-end interaction-agent turn, run against a throwaway data directory.
 
 ### P19: Single-user global state
 - **What:** the conversation log, roster, triggers and Gmail connection are all process-wide singletons with no user ID.

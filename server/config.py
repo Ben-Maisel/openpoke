@@ -50,6 +50,18 @@ def _env_int(name: str, fallback: int) -> int:
         return fallback
 
 
+DEFAULT_MODEL = "anthropic/claude-haiku-5.5"
+
+
+# Resolve a model slot: OPENPOKE_<SLOT>_MODEL, then OPENPOKE_MODEL, then DEFAULT_MODEL
+def _env_model(slot: str) -> str:
+    for name in (f"OPENPOKE_{slot}_MODEL", "OPENPOKE_MODEL"):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return DEFAULT_MODEL
+
+
 class Settings(BaseModel):
     """Application settings with lightweight env fallbacks."""
 
@@ -61,12 +73,12 @@ class Settings(BaseModel):
     server_host: str = Field(default=os.getenv("OPENPOKE_HOST", "0.0.0.0"))
     server_port: int = Field(default=_env_int("OPENPOKE_PORT", 8001))
 
-    # LLM model selection
-    interaction_agent_model: str = Field(default="anthropic/claude-sonnet-4")
-    execution_agent_model: str = Field(default="anthropic/claude-sonnet-4")
-    execution_agent_search_model: str = Field(default="anthropic/claude-sonnet-4")
-    summarizer_model: str = Field(default="anthropic/claude-sonnet-4")
-    email_classifier_model: str = Field(default="anthropic/claude-sonnet-4")
+    # LLM model selection (read when Settings is built, so each slot is overridable via env)
+    interaction_agent_model: str = Field(default_factory=lambda: _env_model("INTERACTION_AGENT"))
+    execution_agent_model: str = Field(default_factory=lambda: _env_model("EXECUTION_AGENT"))
+    execution_agent_search_model: str = Field(default_factory=lambda: _env_model("SEARCH"))
+    summarizer_model: str = Field(default_factory=lambda: _env_model("SUMMARIZER"))
+    email_classifier_model: str = Field(default_factory=lambda: _env_model("EMAIL_CLASSIFIER"))
 
     # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
