@@ -36,6 +36,7 @@ data/
 # ...but the routing eval's hand-written dataset is source, not runtime data
 !evals/routing/data/
 !evals/memory/data/
+!evals/notifications/data/
 
 # Python virtual environment
 server/venv/
