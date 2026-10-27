@@ -12,7 +12,7 @@ import pytest
 from fakes import Gated, calls, is_agent, is_interaction_agent, reply, wait_until
 from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_registry, get_conversation_log
+from server.services import get_agent_registry, get_conversation_log, get_draft_store
 
 pytestmark = pytest.mark.usefixtures("clean_state", "batch_manager")
 
@@ -75,9 +75,16 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
     # The report carried the agent's id into the history, so the model can route "send it" straight back.
     (agent,) = get_agent_registry().list_agents()
     assert f"{AGENT} ({agent.id})" in agent_reports()[0]
-    fake_llm.script(send(agent.id, "User approved. Send draft r-1."), reply(""), when=user_turn)
+    fake_llm.script(
+        calls(("approve_draft", {"draft_id": "r-1"}),
+              ("send_message_to_agent", {"agent_id": agent.id, "instructions": "User approved. Send draft r-1."})),
+        reply(""),
+        when=user_turn,
+    )
     await InteractionAgentRuntime().execute("send it")
     await wait_until(lambda: ("assistant", "sent!") in chat())
+    draft = get_draft_store().get("r-1")
+    assert (draft.status, draft.approval_text) == ("sent", "send it")
 
     assert chat() == [
         ("user", "invite alice to lunch friday"),

@@ -340,6 +340,50 @@ async def test_unknown_or_deleted_drafts_cannot_be_shown(fake_llm):
     assert [role for role, _ in chat()] == []
 
 
+def show(draft_id="r-1"):
+    assert tools_module.send_draft(draft_id).success
+
+
+def test_approval_needs_a_user_reply_after_the_draft_was_shown():
+    stored_draft("r-1")
+    get_conversation_log().record_user_message("draft a lunch invite")  # before showing: doesn't count
+    show("r-1")
+    refused = tools_module.approve_draft("r-1")
+    assert not refused.success
+    assert refused.payload["error"] == "The user hasn't replied since seeing draft r-1. Wait for their answer before approving it."
+
+    get_conversation_log().record_user_message("looks good, send it")
+    approved = tools_module.approve_draft("r-1")
+    assert approved.success and approved.payload["approved_by_user_message"] == "looks good, send it"
+    draft = get_draft_store().get("r-1")
+    assert (draft.status, draft.approval_text) == ("approved", "looks good, send it")
+
+
+def test_showing_a_draft_again_needs_a_fresh_reply():
+    stored_draft("r-1")
+    show("r-1")
+    get_conversation_log().record_user_message("hmm, let me think")
+    show("r-1")
+    assert not tools_module.approve_draft("r-1").success
+
+
+def test_replies_after_a_different_draft_do_not_approve_this_one():
+    stored_draft("r-1")
+    stored_draft("r-2")
+    show("r-2")
+    get_conversation_log().record_user_message("send it")
+    assert "is open" in tools_module.approve_draft("r-1").payload["error"]  # r-1 was never shown
+
+
+@pytest.mark.parametrize("prepare, state", [(lambda: None, "is not on record"),
+                                            (lambda: stored_draft("r-1"), "is open")])
+def test_only_shown_drafts_can_be_approved(prepare, state):
+    prepare()
+    get_conversation_log().record_user_message("send it")
+    result = tools_module.approve_draft("r-1")
+    assert result.payload["error"] == f"Draft 'r-1' {state}. Only a draft shown to the user with send_draft can be approved."
+
+
 async def test_the_interaction_agent_cannot_supply_its_own_email_text(fake_llm):
     # P27: the old tool took to/subject/body, so the model could show text that was never the real draft.
     stored_draft("r-1")

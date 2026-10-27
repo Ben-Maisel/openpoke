@@ -7,7 +7,7 @@ import pytest
 from fakes import calls, is_execution_agent, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_registry, get_execution_agent_logs
+from server.services import get_agent_registry, get_draft_store, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
@@ -221,12 +221,14 @@ async def test_gmail_and_search_actions_are_logged_only_under_the_acting_agent(f
 
 # --- Safety (P20) ----------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="P20: nothing in code stops an agent sending a draft the user never saw")
 async def test_agent_cannot_send_a_draft_the_user_has_not_approved(fake_llm, fake_gmail, agent):
     fake_llm.for_execution(
         calls(("gmail_create_draft", DRAFT_ARGS)),
         calls(("gmail_execute_draft", {"draft_id": "r-1"})),
-        reply("Sent"),
+        reply("Draft r-1 is ready for review"),
     )
     await ExecutionAgentRuntime(agent.id).execute("Email Alice about lunch")
     assert fake_gmail.sent == []
+    (refusal,) = [r for r in tool_results(fake_llm.calls[-1]) if r["tool"] == "gmail_execute_draft"]
+    assert refusal["result"]["error"].startswith("Not sent: draft 'r-1' is open.")
+    assert get_draft_store().get("r-1").status == "open"

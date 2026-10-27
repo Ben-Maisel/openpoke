@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
+from server.services.execution import get_draft_store
 from server.services.gmail import execute_gmail_tool, get_active_gmail_user_id
 
 _SCHEMAS: List[Dict[str, Any]] = [
@@ -351,15 +352,28 @@ def gmail_create_draft(
     return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
 
 
-# Send a previously created Gmail draft using Composio
+# Send a previously created Gmail draft using Composio, only once the user has seen and approved it (P20)
 def gmail_execute_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
+    store = get_draft_store()
+    draft = store.get(draft_id)
+    if draft is None or draft.status != "approved":
+        state = f"is {draft.status}" if draft else "is not on record"
+        return {
+            "error": (
+                f"Not sent: draft {draft_id!r} {state}. Only a draft the user has seen and approved can be sent. "
+                "Report the draft ID so Poke can show it to the user and get their approval."
+            )
+        }
     arguments = {"draft_id": draft_id}
     composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
+    result = _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
+    if isinstance(result, dict) and not result.get("error") and result.get("successful") is not False:
+        store.mark_sent(draft_id)
+    return result
 
 
 # Forward an existing Gmail message with optional additional context

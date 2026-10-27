@@ -123,6 +123,27 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "approve_draft",
+            "description": (
+                "Record that the user approved a draft they were shown, when their latest message clearly says to "
+                "send it. Only approved drafts can be sent. Call this before asking the agent to send the draft."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "draft_id": {
+                        "type": "string",
+                        "description": "The ID of the draft the user approved, e.g. 'r-12'.",
+                    },
+                },
+                "required": ["draft_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "wait",
             "description": "Wait silently when a message is already in conversation history to avoid duplicating responses. Adds a <wait> log entry that is not visible to the user.",
             "parameters": {
@@ -292,6 +313,37 @@ def send_draft(draft_id: str) -> ToolResult:
     )
 
 
+# Record the user's approval of a draft they were shown; only approved drafts can be sent (P20)
+def approve_draft(draft_id: str) -> ToolResult:
+    """Approve a shown draft, citing the user's reply that came after it as the evidence."""
+    store = get_draft_store()
+    draft = store.get(draft_id) if isinstance(draft_id, str) else None
+    if draft is None or draft.status not in ("shown", "approved"):
+        state = f"is {draft.status}" if draft else "is not on record"
+        return ToolResult(success=False, payload={
+            "error": f"Draft {draft_id!r} {state}. Only a draft shown to the user with send_draft can be approved.",
+        })
+
+    # The approval must be a user message that arrived after this draft was last shown
+    reply_after_showing: Optional[str] = None
+    shown_in_chat = False
+    for tag, _, payload in get_conversation_log().iter_entries():
+        if tag == "draft" and payload.startswith(f"Draft {draft.id}\n"):
+            shown_in_chat, reply_after_showing = True, None
+        elif tag == "user_message" and shown_in_chat:
+            reply_after_showing = payload
+    if reply_after_showing is None:
+        return ToolResult(success=False, payload={
+            "error": f"The user hasn't replied since seeing draft {draft.id}. Wait for their answer before approving it.",
+        })
+
+    store.approve(draft.id, reply_after_showing)
+    logger.info(f"Draft {draft.id} approved by the user")
+    return ToolResult(success=True, payload={
+        "status": "approved", "draft_id": draft.id, "approved_by_user_message": reply_after_showing,
+    })
+
+
 # Record silent wait state to avoid duplicate responses
 def wait(reason: str) -> ToolResult:
     """Wait silently and add a wait log entry that is not visible to the user."""
@@ -338,6 +390,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_message_to_user(**args)
         if name == "send_draft":
             return send_draft(**args)
+        if name == "approve_draft":
+            return approve_draft(**args)
         if name == "wait":
             return wait(**args)
 

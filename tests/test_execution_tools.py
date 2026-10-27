@@ -5,7 +5,7 @@ import pytest
 from server.agents.execution_agent.tools import get_tool_registry, get_tool_schemas
 from server.agents.execution_agent.tools import gmail as gmail_tools
 from server.agents.execution_agent.tools import triggers as trigger_tools
-from server.services import get_execution_agent_logs
+from server.services import get_draft_store, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
@@ -39,8 +39,19 @@ def test_tool_names_are_unique():
     ],
 )
 def test_each_gmail_tool_calls_the_matching_composio_action(fake_gmail, tool, kwargs, composio_action):
+    approve_in_store("r-1")
     tool(**kwargs)
     assert fake_gmail.action_names() == [composio_action]
+
+
+def approve_in_store(draft_id, status="approved"):
+    """Put a draft in the store as far along its lifecycle as `status` (P20: only approved drafts send)."""
+    store = get_draft_store()
+    store.record(draft_id, agent_id="a1", recipient="a@x.com", subject="s", body="b")
+    if status in ("shown", "approved"):
+        store.mark_shown(draft_id)
+    if status == "approved":
+        store.approve(draft_id, "yes, send it")
 
 
 def test_unset_optional_arguments_are_not_sent(fake_gmail):
@@ -58,17 +69,40 @@ def test_search_people_renames_paging_arguments(fake_gmail):
 def test_draft_then_send_round_trip(fake_gmail):
     created = gmail_tools.gmail_create_draft(recipient_email="a@x.com", subject="s", body="b")
     draft_id = created["data"]["id"]
+    approve_in_store(draft_id)
     gmail_tools.gmail_execute_draft(draft_id=draft_id)
     assert [m["recipient_email"] for m in fake_gmail.sent] == ["a@x.com"]
+    assert get_draft_store().get(draft_id).status == "sent"
 
 
-def test_sending_an_unknown_draft_reports_failure(fake_gmail):
+@pytest.mark.parametrize("status, state", [(None, "is not on record"), ("open", "is open"), ("shown", "is shown")])
+def test_drafts_the_user_has_not_approved_are_never_sent(fake_gmail, status, state):
+    if status:
+        approve_in_store("r-1", status)
+    result = gmail_tools.gmail_execute_draft(draft_id="r-1")
+    assert result["error"].startswith(f"Not sent: draft 'r-1' {state}. Only a draft the user has seen and approved")
+    assert fake_gmail.actions == []  # Gmail is never even called
+
+
+def test_a_sent_draft_cannot_be_sent_again(fake_gmail):
+    fake_gmail.drafts["r-1"] = {"id": "r-1", "recipient_email": "a@x.com"}
+    approve_in_store("r-1")
+    gmail_tools.gmail_execute_draft(draft_id="r-1")
+    second = gmail_tools.gmail_execute_draft(draft_id="r-1")
+    assert second["error"].startswith("Not sent: draft 'r-1' is sent.")
+    assert len(fake_gmail.sent) == 1
+
+
+def test_a_failed_send_keeps_the_draft_approved(fake_gmail):
+    approve_in_store("r-404")  # approved here, but Gmail doesn't know it
     result = gmail_tools.gmail_execute_draft(draft_id="r-404")
     assert result["successful"] is False
     assert fake_gmail.sent == []
+    assert get_draft_store().get("r-404").status == "approved"
 
 
 def test_tools_refuse_when_gmail_is_not_connected(fake_gmail):
+    approve_in_store("r-1")
     fake_gmail.connected = False
     result = gmail_tools.gmail_execute_draft(draft_id="r-1")
     assert "Gmail not connected" in result["error"]

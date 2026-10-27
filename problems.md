@@ -56,18 +56,18 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P13 | No tests or evaluations exist | E | High | 🟢 Solved |
 | P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🟢 Solved |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
-| P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🔴 Open |
+| P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🟢 Solved |
 | P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🟢 Solved |
 | P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
-| P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
+| P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🟡 Drafts solved; replies and forwards next |
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🟢 Solved |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🟢 Solved |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🟢 Solved |
 | P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
-| P27 | The interaction agent can "edit" a draft itself, so what the user approves isn't what Gmail sends | D | High | 🔴 Open |
+| P27 | The interaction agent can "edit" a draft itself, so what the user approves isn't what Gmail sends | D | High | 🟢 Solved (residual risk noted) |
 
 ---
 
@@ -413,7 +413,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/interaction_agent/tools.py](server/agents/interaction_agent/tools.py), [server/services/conversation/log.py:175](server/services/conversation/log.py#L175), [web/components/chat/ChatMessages.tsx](web/components/chat/ChatMessages.tsx)
 - **What:** the UI has a dedicated "draft" bubble style, but the server records drafts as ordinary assistant replies, so it never triggers. "Verbatim" drafts depend on the interaction agent retyping text from the execution agent's report, rather than pulling the draft by ID.
 - **Planned:** when `gmail_create_draft` succeeds, record `{draft_id, agent, to, subject, body}` in a draft store. `send_draft` takes only a `draft_id` and the server renders the stored text, so no LLM retypes it. Record drafts with a `draft` role so the UI's draft bubble works. Closely linked to P20.
-- **Solution (in progress):**
+- **Solution:**
   1. **Draft store** ([drafts.py](server/services/execution/drafts.py)).
      - When a worker's `gmail_create_draft` succeeds, the runtime records the exact recipient, cc/bcc, subject, body and thread under Gmail's draft ID. Deleting the draft in Gmail marks it deleted.
      - A draft moves open → shown → approved → sent, or to deleted before it's sent. The store refuses any other move with a clear error: an unseen draft can't be approved, an unapproved draft can't be sent, and a sent draft is final.
@@ -447,7 +447,20 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py)
 - **What:** "never send without the user's confirmation" exists only as prompt text. In code, `gmail_execute_draft` sends any draft ID the LLM passes, including one the user never saw. Sending email can't be undone.
 - **Planned:** using the draft store from P16, only allow a send for a draft that was actually shown to the user, and record the approval.
-- **Solution:** —
+- **Solution (drafts):**
+  - **Approval is a recorded step.** The interaction agent calls `approve_draft(draft_id)` when your reply approves a draft. It succeeds only if two things are true:
+    - the draft was shown with `send_draft`
+    - a user message arrived **after** that showing; one written before it, or before an earlier showing, doesn't count
+
+    That message is stored as the approval evidence.
+  - **Sends are gated in code.** `gmail_execute_draft` checks the store before it calls Gmail. A draft that is unknown, open, shown-but-unapproved or already sent is refused with a clear message, and Gmail is never called. After a successful send the draft is marked sent, so it can't be sent twice. A failed send leaves it approved.
+  - **What's still judged by the LLM:** whether "sounds good" means "send it". That's inherent to a chat-first product. The judgement is now explicit, logged, and only possible after you've seen the real text. A Send button on the draft bubble would remove it entirely (noted as an option).
+  - **Verified:**
+    - the strict expected failure (an agent sends a draft you never saw) now passes, and the worker is told why the send was refused
+    - tool tests cover every refused state, no double send, and a failed send staying approved
+    - approval tests cover a reply that came before the showing, a re-showing that needs a fresh reply, and a reply to a different draft
+    - the end-to-end draft → "send it" → sent test records your "send it" as the approval
+  - **Still open:** `gmail_reply_to_thread` and `gmail_forward_email` send immediately, with no draft. They get the same treatment next.
 
 ### P21: Reminders drift after DST in zero-offset timezones
 - **Where:** [server/services/triggers/utils.py:104](server/services/triggers/utils.py#L104)
@@ -542,7 +555,11 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **What:** asked to "make it friendlier and shorter" after a draft was shown, the interaction agent wrote a new version and displayed it with `send_draft` + `send_message_to_user`, without delegating to the agent that owns the Gmail draft. The real draft in Gmail still holds the old text. If the user then says "send it," the drafting agent sends the version the user rejected.
 - **Found by:** the P13 baseline routing eval (`implicit-friendlier` at 500 agents). The raw model output is in `evals/results/baseline/decisions.jsonl`.
 - **Planned:** resolved by P16 + P20. `send_draft` takes only a `draft_id` and renders stored text, so the interaction agent can't show text that isn't the real draft, and only a shown and approved draft can be sent.
-- **Solution:** —
+- **Solution:**
+  - `send_draft` now takes only an ID and shows the stored text. An old-style call carrying its own body is rejected, and a test proves nothing gets shown.
+  - Approval requires the real draft to have been shown, and only approved drafts can be sent.
+  - The prompt tells the interaction agent never to write email text and to route edits to the owning agent, which then creates a new draft that needs its own approval.
+  - **Residual risk:** the model could still type a rewrite into a plain chat message. Even then, "send it" can only send a draft whose real text you were shown, so the worst case is sending the version you actually saw, never one you didn't.
 
 ### P19: Single-user global state
 - **What:** the conversation log, roster, triggers and Gmail connection are all process-wide singletons with no user ID.

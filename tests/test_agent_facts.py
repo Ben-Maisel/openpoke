@@ -5,7 +5,7 @@ import pytest
 from fakes import calls, reply
 from server.agents.execution_agent.facts import extract_facts
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
-from server.services import get_agent_registry
+from server.services import get_agent_registry, get_draft_store
 
 
 def added(tool, args, result=None):
@@ -115,9 +115,21 @@ async def test_sending_the_draft_closes_it_on_the_card(fake_llm, fake_gmail, age
         calls(("gmail_execute_draft", {"draft_id": "r-1"})), reply("sent"),
     )
     await ExecutionAgentRuntime(agent.id).execute("draft it")
+    assert get_agent_registry().facts(agent.id)["draft"] == ["r-1"]
+    get_draft_store().mark_shown("r-1")
+    get_draft_store().approve("r-1", "send it")
     await ExecutionAgentRuntime(agent.id).execute("send it")
     facts = get_agent_registry().facts(agent.id)
     assert facts["draft"] == [] and facts["email"] == ["alice@x.com"]
+
+
+async def test_a_refused_send_keeps_the_draft_open_on_the_card(fake_llm, fake_gmail, agent):
+    fake_llm.for_execution(
+        calls(("gmail_create_draft", {"recipient_email": "alice@x.com", "subject": "s", "body": "b"})),
+        calls(("gmail_execute_draft", {"draft_id": "r-1"})), reply("not approved yet"),
+    )
+    await ExecutionAgentRuntime(agent.id).execute("draft and send it")
+    assert get_agent_registry().facts(agent.id)["draft"] == ["r-1"]
 
 
 async def test_failed_tool_calls_leave_the_card_unchanged(fake_llm, fake_gmail, agent):

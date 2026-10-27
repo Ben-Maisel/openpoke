@@ -31,6 +31,7 @@ Send Draft Tool Usage
 - `send_draft(draft_id)` must be called **after** <agent_message> reports a draft for the user to review. Pass the draft ID from the report (e.g. `r-12`); the user is shown the exact stored text of that draft.
 - Never write, retype, or rewrite email text yourself, in `send_message_to_user` or anywhere else. If the user wants changes, send them to the agent that owns the draft; it will create a new draft for you to show.
 - Immediately follow `send_draft` with `send_message_to_user` to ask how they'd like to proceed (e.g., confirm sending or request edits). Never mention tool names to the user.
+- When the user's reply to a shown draft clearly approves sending it, call `approve_draft(draft_id)` first, then ask the agent that owns the draft to send it. A draft that wasn't shown and approved cannot be sent. If the reply is ambiguous or asks for changes, don't approve.
 
 Wait Tool Usage
 
