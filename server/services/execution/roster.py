@@ -1,8 +1,6 @@
 """Simple agent roster management - just a list of agent names."""
 
 import json
-import fcntl
-import time
 from pathlib import Path
 
 from ...logging_config import logger
@@ -32,33 +30,13 @@ class AgentRoster:
             self.save()
 
     def save(self) -> None:
-        """Save agent names to roster.json with file locking."""
-        max_retries = 5
-        retry_delay = 0.1
-
-        for attempt in range(max_retries):
-            try:
-                self._roster_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # Open file and acquire exclusive lock
-                with open(self._roster_path, 'w') as f:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    try:
-                        json.dump(self._agents, f, indent=2)
-                        return
-                    finally:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-
-            except BlockingIOError:
-                # Lock is held by another process
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    logger.warning("Failed to acquire lock on roster.json after retries")
-            except Exception as exc:
-                logger.warning(f"Failed to save roster.json: {exc}")
-                break
+        """Save agent names to roster.json."""
+        try:
+            self._roster_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._roster_path, 'w') as f:
+                json.dump(self._agents, f, indent=2)
+        except Exception as exc:
+            logger.warning(f"Failed to save roster.json: {exc}")
 
     def add_agent(self, agent_name: str) -> None:
         """Add an agent to the roster if not already present."""
