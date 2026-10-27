@@ -159,7 +159,7 @@ Each step builds on the previous ones. Related problems that touch the same code
     - A single `DATA_DIR` in `server/config.py`, overridable with `OPENPOKE_DATA_DIR`, replaces 7 hard-coded copies of the data path.
     - `tests/conftest.py` points it at a throwaway folder and blanks API keys before the server is imported.
     - Added `pytest.ini`, `server/requirements-dev.txt`, and smoke tests in `tests/test_smoke.py` covering the app booting, health, data isolation, and the data-dir override.
-  - [ ] CI workflow (Linux + Windows, Python 3.10 + 3.12)
+  - [x] **CI workflow.** `.github/workflows/tests.yml` runs pytest on every push and pull request across Ubuntu and Windows × Python 3.10 and 3.12 (4 jobs). Real-LLM evals are excluded from CI.
   - [ ] Unit tests: triggers, logs and memory, email processing, timezones and small stores
   - [ ] Fake LLM and fake Gmail fixtures, plus component tests
   - [ ] Baseline routing eval (before P1)
