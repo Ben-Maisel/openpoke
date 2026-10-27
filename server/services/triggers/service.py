@@ -183,6 +183,9 @@ class TriggerService:
     def list_triggers(self, *, agent_id: str) -> List[TriggerRecord]:
         return self._store.list_for_agent(agent_id)
 
+    def reassign_agent(self, old_agent_id: str, new_agent_id: str) -> int:
+        return self._store.reassign_agent(old_agent_id, new_agent_id)
+
     def get_due_triggers(
         self, *, before: datetime, agent_id: Optional[str] = None
     ) -> List[TriggerRecord]:

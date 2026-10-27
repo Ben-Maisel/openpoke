@@ -7,10 +7,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import get_settings
+from .config import DATA_DIR, get_settings
 from .logging_config import configure_logging, logger
 from .routes import api_router
-from .services import get_important_email_watcher, get_trigger_scheduler
+from .services import (
+    get_agent_registry,
+    get_execution_agent_logs,
+    get_important_email_watcher,
+    get_trigger_scheduler,
+    get_trigger_service,
+)
+from .services.execution.migration import migrate_legacy_roster
 
 
 # Register global exception handlers for consistent error responses across the API
@@ -68,6 +75,12 @@ app.include_router(api_router)
 @app.on_event("startup")
 # Initialize background services (trigger scheduler and email watcher) when the app starts
 async def _start_trigger_scheduler() -> None:
+    # Before any trigger fires, carry agents from a pre-registry install over to stable IDs (P1e)
+    try:
+        migrate_legacy_roster(DATA_DIR / "execution_agents", get_agent_registry(),
+                              get_execution_agent_logs(), get_trigger_service())
+    except Exception:  # pragma: no cover - never block startup
+        logger.exception("Legacy roster import failed")
     scheduler = get_trigger_scheduler()
     await scheduler.start()
     watcher = get_important_email_watcher()

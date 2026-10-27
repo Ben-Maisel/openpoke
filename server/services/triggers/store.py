@@ -97,6 +97,15 @@ class TriggerStore:
             cursor = conn.execute(sql, payload)
             return cursor.rowcount > 0
 
+    def reassign_agent(self, old_agent_id: str, new_agent_id: str) -> int:
+        """Move every trigger from one owner to another (used by the legacy roster import)."""
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE triggers SET agent_id = ?, updated_at = ? WHERE agent_id = ?",
+                (new_agent_id, to_storage_timestamp(utc_now()), old_agent_id),
+            )
+            return cursor.rowcount
+
     def list_for_agent(self, agent_id: str) -> List[TriggerRecord]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(

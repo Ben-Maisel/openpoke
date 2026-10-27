@@ -41,7 +41,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 | ID | Problem | Area | Severity | Status |
 |---|---|---|---|---|
-| P1 | Roster stores bare names only, with no description or metadata | A | High | 🟡 In progress |
+| P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🔴 Open |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🔴 Open |
@@ -111,8 +111,17 @@ Each step builds on the previous ones. Related problems that touch the same code
     - **Test support:** the fake LLM gained `default()` responses so card calls don't need scripting in every test.
     - **Tests:** `tests/test_agent_card.py`, 8 tests, including a gated card call proving the report returns before the refresh completes.
     - **Live:** a rent-reminder agent's card refreshed about 1.5 s after its run to "…Active as trigger ID 1, firing 9:00 AM Pacific on the 1st of every month, next on November 1, 2026…".
-  - [ ] P1e: one-time import of existing roster and memory files
-- **Solution:** —
+  - [x] **P1e: legacy import.** `server/services/execution/migration.py` runs at app startup before the trigger scheduler. A pre-registry `roster.json` becomes registered agents:
+    - **Card:** each starts from its last request.
+    - **Memory:** copied from the slugified-name file to the new ID file. Names that once shared a file each keep that history.
+    - **Triggers:** moved from the agent name to the new ID.
+    - **Runs once:** the legacy files are renamed `.migrated`, so the import never repeats. An unreadable roster is skipped and left in place.
+    - **Tests:** `tests/test_legacy_migration.py`, 9 tests, including the app's startup hook.
+- **Solution:** agents now have an identity and a card instead of just a name.
+  - **Identity:** a stable ID (`a17`), never reused.
+  - **Card:** an LLM-maintained status summary plus exact facts recorded by code (emails, people, threads, open drafts, live triggers) and usage (last used, run count), all in a SQLite registry.
+  - **Storage:** memory and triggers are keyed by ID, and existing installs are migrated automatically.
+  - **Not yet visible to the interaction agent:** it still sees only names. Showing it cards (the hot cache and shortlist) is P2, and routing by ID is P4.
 
 ### P2: Entire roster injected into every prompt
 - **Where:** [server/agents/interaction_agent/agent.py:45](server/agents/interaction_agent/agent.py#L45)
