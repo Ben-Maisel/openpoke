@@ -12,7 +12,7 @@ from ...services.execution import AgentRecord, get_agent_registry, get_draft_sto
 from ...services.execution.lifecycle import split_archived
 from ...services.execution.matching import DuplicateCandidate, find_possible_duplicates
 from ...services.execution.search import search_agents as rank_agents
-from ..execution_agent.batch_manager import ExecutionBatchManager
+from ..execution_agent.batch_manager import get_execution_batch_manager
 
 
 @dataclass
@@ -163,7 +163,7 @@ TOOL_SCHEMAS = [
     },
 ]
 
-_EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
+_EXECUTION_BATCH_MANAGER = get_execution_batch_manager()
 
 
 # Send instructions to an existing agent by ID; an unknown ID is an error, never a silent create

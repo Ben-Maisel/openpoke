@@ -340,6 +340,9 @@ Each step builds on the previous ones. Related problems that touch the same code
   - **Verified:**
     - the strict expected failure passes: the second run's prompt contains the first run's result, and the journal reads request 1 → response 1 → request 2 → response 2
     - a new test confirms that two different agents still run at the same time
+  - **Follow-up fix, found while working on P7:** the trigger scheduler created a new batch manager for every firing, which bypassed the lock. A reminder run and one of your own requests to the same agent could still overlap.
+    - There's now one shared batch manager (`get_execution_batch_manager()`), used by both the interaction tools and the scheduler.
+    - **Verified:** a new test shows a trigger firing for a busy agent waits for your run, then sees its result. On the old code it fails, because both runs start at once.
 
 ### P11: Interaction-agent turns race
 - **Where:** [server/agents/interaction_agent/runtime.py](server/agents/interaction_agent/runtime.py)

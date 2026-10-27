@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Set
 
-from ..agents.execution_agent.batch_manager import ExecutionBatchManager
+from ..agents.execution_agent.batch_manager import get_execution_batch_manager
 from ..agents.execution_agent.runtime import ExecutionResult
 from ..config import get_settings
 from ..logging_config import logger
@@ -91,7 +91,7 @@ class TriggerScheduler:
                     "scheduled_for": trigger.next_trigger,
                 },
             )
-            execution_manager = ExecutionBatchManager()
+            execution_manager = get_execution_batch_manager()  # shared: same per-agent locks as user requests
             result = await execution_manager.execute_agent(
                 trigger.agent_id,
                 instructions,

@@ -55,11 +55,13 @@ def fake_gmail(monkeypatch):
 @pytest.fixture
 def batch_manager(monkeypatch):
     """A fresh execution batch manager per test, so no pending batch leaks between tests."""
+    from server.agents.execution_agent import batch_manager as batch_manager_module
     from server.agents.execution_agent.batch_manager import ExecutionBatchManager
     from server.agents.interaction_agent import tools as interaction_tools
 
     manager = ExecutionBatchManager(timeout_seconds=2)
     monkeypatch.setattr(interaction_tools, "_EXECUTION_BATCH_MANAGER", manager)
+    monkeypatch.setattr(batch_manager_module, "_shared_manager", manager)
     return manager
 
 

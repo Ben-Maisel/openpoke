@@ -46,7 +46,7 @@ def scheduler(service, monkeypatch):
     FakeBatchManager.calls = []
     FakeBatchManager.outcome = "success"
     FakeBatchManager.gate = None
-    monkeypatch.setattr(scheduler_module, "ExecutionBatchManager", FakeBatchManager)
+    monkeypatch.setattr(scheduler_module, "get_execution_batch_manager", FakeBatchManager)
     monkeypatch.setattr(scheduler_module, "get_trigger_service", lambda: service)
     monkeypatch.setattr(scheduler_module, "_utc_now", lambda: FIXED_NOW)
     return scheduler_module.TriggerScheduler(poll_interval_seconds=0.01)

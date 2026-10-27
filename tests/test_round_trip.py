@@ -217,3 +217,24 @@ async def test_different_agents_still_run_at_the_same_time(fake_llm, fake_gmail,
     alice.release()
     bob.release()
     await asyncio.wait_for(asyncio.gather(*runs), timeout=2)
+
+
+async def test_a_trigger_for_a_busy_agent_waits_for_the_users_run(fake_llm, fake_gmail, batch_manager):
+    from server.services.trigger_scheduler import TriggerScheduler
+    from server.services.triggers import get_trigger_service
+
+    first = Gated(reply("Draft r-1 created"))
+    fake_llm.script(first, reply("Reminder: nothing new"), when=is_agent(AGENT))
+    fake_llm.script(reply(""), reply(""), when=agent_turn)
+    agent = get_agent_registry().create(AGENT)
+    trigger = get_trigger_service().create_trigger(agent_id=agent.id, payload="Check on lunch",
+                                                   start_time="2030-01-01T09:00:00Z")
+
+    user_run = asyncio.create_task(batch_manager.execute_agent(agent.id, "Draft the invite"))
+    await wait_until(first.reached.is_set)
+    trigger_run = asyncio.create_task(TriggerScheduler()._execute_trigger(trigger))
+    await asyncio.sleep(0.05)
+    assert len(fake_llm.calls_to(is_agent(AGENT))) == 1  # the trigger's run is queued behind the user's
+    first.release()
+    await asyncio.wait_for(asyncio.gather(user_run, trigger_run), timeout=2)
+    assert "Draft r-1 created" in fake_llm.calls_to(is_agent(AGENT))[1].system

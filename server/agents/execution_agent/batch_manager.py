@@ -207,3 +207,14 @@ class ExecutionBatchManager:
             return
 
         loop.create_task(runtime.handle_agent_message(payload))
+
+
+_shared_manager: Optional[ExecutionBatchManager] = None
+
+
+# The one batch manager every caller shares, so per-agent locks and batching cover user requests and triggers alike
+def get_execution_batch_manager() -> ExecutionBatchManager:
+    global _shared_manager
+    if _shared_manager is None:
+        _shared_manager = ExecutionBatchManager()
+    return _shared_manager
