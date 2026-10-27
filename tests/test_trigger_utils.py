@@ -6,6 +6,7 @@ import pytest
 from zoneinfo import ZoneInfo
 
 from server.services.triggers.utils import (
+    UTC_ZONE_KEYS,
     build_recurrence,
     coerce_start_datetime,
     load_rrule,
@@ -102,6 +103,22 @@ def test_build_recurrence_uses_z_dtstart_for_utc():
     start = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
     text = build_recurrence("RRULE:FREQ=WEEKLY", start, ZoneInfo("UTC"))
     assert text == "DTSTART:20261026T090000Z\nRRULE:FREQ=WEEKLY"
+
+
+@pytest.mark.parametrize("zone", ["Europe/London", "Europe/Lisbon", "Europe/Dublin", "Atlantic/Canary"])
+def test_build_recurrence_keeps_tzid_for_zones_that_are_only_zero_offset_today(zone):
+    # Winter start: the UTC offset is 0, but the zone is not UTC (P21).
+    tz = ZoneInfo(zone)
+    start = datetime(2026, 11, 2, 9, 0, tzinfo=tz)
+    assert build_recurrence("FREQ=DAILY", start, tz).startswith(f"DTSTART;TZID={zone}:20261102T090000")
+
+
+@pytest.mark.parametrize("zone", sorted(UTC_ZONE_KEYS))
+def test_utc_zone_list_only_contains_zones_that_are_utc_all_year(zone):
+    tz = ZoneInfo(zone)
+    for month in (1, 7):
+        assert datetime(2026, month, 15, tzinfo=tz).utcoffset().total_seconds() == 0
+    assert build_recurrence("FREQ=DAILY", datetime(2026, 7, 15, 9, tzinfo=tz), tz).startswith("DTSTART:20260715T090000Z")
 
 
 def test_build_recurrence_replaces_caller_supplied_dtstart():

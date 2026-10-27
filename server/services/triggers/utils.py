@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from dateutil import parser as date_parser
@@ -13,6 +13,9 @@ from ...logging_config import logger
 UTC = timezone.utc
 DEFAULT_STATUS = "active"
 VALID_STATUSES = {"active", "paused", "completed"}
+# Zones that are UTC+0 all year. Zones that are merely +0 in winter (Europe/London) are not here.
+UTC_ZONE_KEYS = {"UTC", "Etc/UTC", "Etc/Universal", "Universal", "Etc/Zulu", "Zulu",
+                 "GMT", "Etc/GMT", "Etc/GMT+0", "Etc/GMT-0", "Etc/GMT0", "GMT0", "Etc/Greenwich", "Greenwich"}
 
 
 def utc_now() -> datetime:
@@ -101,10 +104,12 @@ def build_recurrence(
     else:
         localized_start = start_dt_local.astimezone(tz)
 
-    if localized_start.utcoffset() == timedelta(0):
+    # Pin to UTC only for zones that are UTC year-round; a zone that is merely +0 today
+    # (London in winter) needs its TZID so later occurrences follow its DST changes.
+    tz_name = getattr(tz, "key", "UTC")
+    if tz_name in UTC_ZONE_KEYS:
         dt_line = f"DTSTART:{localized_start.astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     else:
-        tz_name = getattr(tz, "key", "UTC")
         dt_line = f"DTSTART;TZID={tz_name}:{localized_start.strftime('%Y%m%dT%H%M%S')}"
 
     lines = [segment.strip() for segment in recurrence_rule.strip().splitlines() if segment.strip()]

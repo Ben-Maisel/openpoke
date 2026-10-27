@@ -61,7 +61,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
-| P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🔴 Open |
+| P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🔴 Open |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
@@ -270,7 +270,12 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/triggers/utils.py:104](server/services/triggers/utils.py#L104)
 - **What:** `build_recurrence` writes the recurrence start in UTC form whenever the start time's UTC offset *happens to be zero*, when the intent was "the timezone is UTC." A London user creating "daily at 9am" in winter (UTC+0) gets a rule pinned to UTC. After clocks go forward in March, it fires at 10am local. The same applies to Ireland and Portugal.
 - **Found by:** `test_recurring_trigger_in_zero_offset_zone_keeps_local_time_across_dst_start` (marked expected failure until fixed).
-- **Solution:** —
+- **Solution:** `build_recurrence` now decides by the zone's *name*. Only zones that are UTC all year (`UTC_ZONE_KEYS`: UTC, Etc/UTC, GMT, Zulu, …) are written as a `…Z` UTC start. Every other zone, including London in winter, gets `DTSTART;TZID=<zone>`, so later occurrences follow its clock changes. Removed the now-unused `timedelta` import.
+  - **Verified:**
+    - the London DST test passes, with its expected-failure marker removed
+    - a new test confirms that London, Lisbon, Dublin and the Canaries keep their zone name
+    - a guard test checks that every entry in `UTC_ZONE_KEYS` is a real zone at +0 in both January and July
+  - **Not migrated:** reminders already saved with the old logic stay pinned to UTC. There are no real users, so a data fix wasn't worth building.
 
 ### P22: Unknown statuses silently become "active"
 - **Where:** [server/services/triggers/utils.py:44](server/services/triggers/utils.py#L44)

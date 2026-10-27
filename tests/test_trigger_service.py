@@ -94,7 +94,6 @@ def test_recurring_trigger_keeps_local_time_across_dst_end(service):
     assert updated.next_trigger == "2026-11-01T14:00:00Z"
 
 
-@pytest.mark.xfail(strict=True, reason="P21: zero-offset zones are pinned to UTC and drift after DST")
 def test_recurring_trigger_in_zero_offset_zone_keeps_local_time_across_dst_start(service):
     # London is UTC+0 in winter. UK DST starts Sunday 2027-03-28, after which
     # a 09:00 London reminder must fire at 08:00Z.
