@@ -86,7 +86,6 @@ async def test_failed_one_time_trigger_records_error_and_stops(scheduler, servic
     assert after.next_trigger is None
 
 
-@pytest.mark.xfail(strict=True, reason="P23: rescheduling wipes the error just recorded")
 async def test_failed_recurring_trigger_keeps_error_and_is_rescheduled(scheduler, service):
     FakeBatchManager.outcome = "failure"
     record = service.create_trigger(
@@ -96,6 +95,30 @@ async def test_failed_recurring_trigger_keeps_error_and_is_rescheduled(scheduler
     after = _reload(service, record)
     assert after.next_trigger == "2026-10-27T12:00:00Z"
     assert after.last_error == "boom"
+
+
+async def test_a_later_success_clears_the_previous_error(scheduler, service):
+    FakeBatchManager.outcome = "failure"
+    record = service.create_trigger(
+        agent_name="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+    )
+    await scheduler._execute_trigger(record)
+    FakeBatchManager.outcome = "success"
+    await scheduler._execute_trigger(_reload(service, record))
+    assert _reload(service, record).last_error is None
+
+
+async def test_failure_is_visible_to_the_owning_agent_through_list_triggers(scheduler, service, monkeypatch):
+    from server.agents.execution_agent.tools import triggers as trigger_tools
+
+    monkeypatch.setattr(trigger_tools, "_TRIGGER_SERVICE", service)
+    FakeBatchManager.outcome = "failure"
+    record = service.create_trigger(
+        agent_name="Morning Summary", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+    )
+    await scheduler._execute_trigger(record)
+    listed = trigger_tools.build_registry("Morning Summary")["listTriggers"]()["triggers"]
+    assert listed[0]["last_error"] == "boom"
 
 
 async def test_crashing_agent_is_treated_as_failure(scheduler, service):

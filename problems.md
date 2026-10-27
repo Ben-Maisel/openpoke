@@ -63,7 +63,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🟢 Solved |
-| P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
+| P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🟢 Solved |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
 | P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
 | P26 | The hard-coded default model was retired, so every LLM call fails out of the box | D | Critical | 🟢 Solved |
@@ -294,7 +294,13 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py) (`_handle_failure`)
 - **What:** on failure, the scheduler records `last_error` and then calls `schedule_next_occurrence`, which always clears `last_error`. A recurring reminder can fail on every run and leave no trace.
 - **Found by:** `test_failed_recurring_trigger_keeps_error_and_is_rescheduled` (expected failure until fixed).
-- **Solution:** —
+- **Clarification:** the failure itself was never silent in the moment. Triggers run through the batch manager, which reports `[FAILED] …` to the interaction agent. What was lost was the *record*, so a later check (an agent calling `listTriggers`) showed no error.
+- **Solution:** `_handle_failure` now reschedules first and records the error last, so the rescheduling step (which clears `last_error`, correctly, after a success) can no longer erase it.
+  - **Verified:**
+    - the P23 test passes, with its expected-failure marker removed
+    - a later successful run still clears the old error
+    - the owning agent sees `last_error` through its `listTriggers` tool
+  - **Not changed:** a failed *one-time* reminder keeps `status: "active"` with no next fire time. It's cosmetic and was left alone.
 
 ### P24: Logs corrupt literal backslash-n
 - **Where:** `_encode_payload` / `_decode_payload`, copy-pasted three times:
