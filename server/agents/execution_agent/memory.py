@@ -92,6 +92,13 @@ def _list_triggers(args: Dict[str, Any], result: Any, ref: str) -> str:
     return "\n".join(lines)
 
 
+def _recall(args: Dict[str, Any], result: Any, ref: str) -> str:
+    result = result if isinstance(result, dict) else {}
+    if args.get("ref"):
+        return f"looked up {args['ref']} in full"
+    return f"searched history for \"{args.get('query', '')}\" → {len(result.get('matches') or [])} match(es)"
+
+
 def _generic(args: Dict[str, Any], result: Any, ref: str) -> str:
     return f"args {_compact(args, GENERIC_CHARS, ref)} → {_compact(result, GENERIC_CHARS, ref)}"
 
@@ -106,6 +113,7 @@ _DIGESTS: Dict[str, Callable[[Dict[str, Any], Any, str], str]] = {
     "createTrigger": _trigger,
     "updateTrigger": _trigger,
     "listTriggers": _list_triggers,
+    "recall": _recall,
 }
 
 
@@ -162,7 +170,7 @@ def render_recent_history(entries: Sequence[Entry], token_budget: int) -> str:
         kept.insert(0, text)
         budget -= len(text)
     omitted = len(runs) - len(kept)
-    parts = [f'<earlier_runs count="{omitted}">Not shown. Your card above summarizes them.</earlier_runs>'] if omitted else []
+    parts = [f'<earlier_runs count="{omitted}">Not shown. Your card above summarizes them; use recall to search them.</earlier_runs>'] if omitted else []
     parts += kept
     if in_progress:
         parts.append(render_history(in_progress))

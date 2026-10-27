@@ -37,6 +37,9 @@ You also manage reminder triggers for this agent:
 - updateTrigger: Change an existing trigger (use `status="paused"` to cancel or `status="active"` to resume).
 - listTriggers: Inspect all triggers assigned to this agent.
 
+Your history below shows only your most recent runs, as digests; older runs are summarized in your card.
+- recall: Search your full history (`query`), or get one past tool call's complete record by its ref (`ref`, e.g. "r12"). Use it before redoing work or asking for details you may already have.
+
 # Guidelines
 1. Analyze the instructions carefully before taking action
 2. Use the appropriate tools to complete the task

@@ -171,7 +171,7 @@ def test_budget_keeps_the_newest_whole_runs_and_counts_the_rest():
     # Each run renders to roughly 1,100 characters, so a 1,000-token (4,000-character) budget fits three.
     text = render_recent_history(journal(10, size=1000), token_budget=1000)
     lines = text.splitlines()
-    assert lines[0] == '<earlier_runs count="7">Not shown. Your card above summarizes them.</earlier_runs>'
+    assert lines[0] == '<earlier_runs count="7">Not shown. Your card above summarizes them; use recall to search them.</earlier_runs>'
     assert [line.split(">")[1].split("<")[0] for line in lines[1::2]] == ["request 7", "request 8", "request 9"]
     assert all(line.startswith("<agent_response") for line in lines[2::2])  # no run is cut in half
 
@@ -215,3 +215,9 @@ def test_long_fact_lists_are_capped():
     line = render_facts({"email": [f"p{i:03}@x.com" for i in range(MAX_LISTED + 5)]})
     assert line.endswith("p019@x.com (+5 more)")
     assert line.count("@") == MAX_LISTED
+
+
+def test_recall_digests_say_what_was_looked_up_not_the_whole_result():
+    assert digest_tool_call(call("recall", {"ref": "r3"}, {"record": "x" * 9000})) == "recall [r7]: looked up r3 in full"
+    searched = digest_tool_call(call("recall", {"query": "hotel"}, {"matches": [{}, {}]}))
+    assert searched == 'recall [r7]: searched history for "hotel" → 2 match(es)'

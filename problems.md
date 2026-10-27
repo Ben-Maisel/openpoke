@@ -45,7 +45,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟢 Solved |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
-| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟡 Mostly solved (recall tool and eval pending) |
+| P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟡 Mostly solved (eval pending) |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
@@ -211,10 +211,28 @@ Each step builds on the previous ones. Related problems that touch the same code
      - The rest are replaced by one line: `<earlier_runs count="N">`.
      - The newest run and the request in progress are always shown, so the prompt stays bounded however long the history grows. The only possible overshoot is the size of one oversized run.
 
+  4. **Recall: a way back to everything else.** The worker gets a `recall` tool ([recall.py](server/agents/execution_agent/tools/recall.py)) with two modes:
+     - `recall(ref="r12")` returns one past tool call's complete stored record, for example a whole email that a digest only summarized. Records over 20k characters are cut, with a note saying so; the journal on disk never is.
+     - `recall(query=...)` searches every journal entry, including runs no longer in the prompt. It returns the 5 best matches as digests, with timestamps and refs.
+       - The search is lexical with IDF weighting, the same approach as `search_agents`, and makes no LLM call.
+       - It matches against the full stored text but shows the digest.
+       - Newer entries win ties.
+       - Earlier `recall` results are skipped, so memory doesn't echo itself.
+
+     In the prompt, a recall shows as one short line ("looked up r3 in full"), not the whole result.
+
   The unused `conversation_limit` parameter is removed, since the budget replaces it.
   - **Verified:**
     - Unit tests cover the budget keeping the newest whole runs, an oversized latest run, the request in progress, trigger runs, and history size staying flat across 20, 200 and 2,000 runs.
     - Fact tests cover their order, the empty case and the cap.
+    - Recall tests cover:
+      - full records past the digest
+      - cutting huge records while the disk stays whole
+      - per-agent refs and clear errors
+      - finding an old run beyond the budget
+      - rare words outranking common ones
+      - ties, caps and skipping earlier recalls
+      - a real runtime run that recalls a door code from a full email mid-task
     - Runtime tests check two things. A worker sees "Open drafts: r-1" in its next run. With a 300-run journal, its prompt history stays within the budget, still contains its card, and shows the newest run but not the first.
 
 ### P6: Logged tool data is blindly truncated
