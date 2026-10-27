@@ -43,6 +43,7 @@ class WorkingSet:
     hot: List[AgentRecord] = field(default_factory=list)
     matches: List[ScoredAgent] = field(default_factory=list)
     total_agents: int = 0
+    archived: int = 0  # agents left out entirely because they're archived (P3)
 
     @property
     def agents(self) -> List[AgentRecord]:

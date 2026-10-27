@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ...services.execution import AgentRecord, get_agent_registry
+from ...services.execution.lifecycle import split_archived
 from ...services.execution.search import WorkingSet, select_working_set
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
@@ -31,11 +32,14 @@ def routing_query(latest_text: str, transcript: str) -> str:
     return f"{latest_text}\n{recent}"
 
 
-# The live working set: recently used agents plus the best matches for this turn (P2)
+# The live working set: recently used agents plus the best matches for this turn (P2), archived ones left out (P3)
 def build_working_set(latest_text: str, transcript: str) -> Tuple[WorkingSet, Dict[str, Dict[str, List[str]]]]:
     registry = get_agent_registry()
     facts = registry.all_facts()
-    return select_working_set(routing_query(latest_text, transcript), registry.list_agents(), facts), facts
+    active, archived = split_archived(registry.list_agents(), facts)
+    working_set = select_working_set(routing_query(latest_text, transcript), active, facts)
+    working_set.archived = len(archived)
+    return working_set, facts
 
 
 # Build structured message with conversation history, the agents in view, and current turn
@@ -73,7 +77,7 @@ def _render_conversation_history(transcript: str) -> str:
 
 # Format the working set: recent agents and matching agents with their cards, plus a count of the rest
 def render_working_set(working_set: WorkingSet, facts_by_id: FactsById) -> str:
-    if working_set.total_agents == 0:
+    if working_set.total_agents == 0 and not working_set.archived:
         return "None"
 
     sections: List[str] = []
@@ -87,6 +91,11 @@ def render_working_set(working_set: WorkingSet, facts_by_id: FactsById) -> str:
     if hidden > 0:
         sections.append(
             f'<other_agents count="{hidden}">Not shown. Use search_agents to look for one before creating a new agent.</other_agents>'
+        )
+    if working_set.archived:
+        sections.append(
+            f'<archived_agents count="{working_set.archived}">Idle for a while with nothing open, so not shown. '
+            'search_agents still finds them; using one makes it active again.</archived_agents>'
         )
     return "\n".join(sections)
 

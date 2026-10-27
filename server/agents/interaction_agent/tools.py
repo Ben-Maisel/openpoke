@@ -3,11 +3,12 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Collection, Dict, List, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import AgentRecord, get_agent_registry, get_draft_store
+from ...services.execution.lifecycle import split_archived
 from ...services.execution.matching import DuplicateCandidate, find_possible_duplicates
 from ...services.execution.search import search_agents as rank_agents
 from ..execution_agent.batch_manager import ExecutionBatchManager
@@ -173,7 +174,8 @@ def send_message_to_agent(agent_id: str, instructions: str) -> ToolResult:
     registry = get_agent_registry()
     agent = registry.get(agent_id)
     if agent is None:
-        recent = [{"agent_id": a.id, "name": a.name} for a in registry.list_agents()[:_SUGGESTIONS]]
+        active, _ = split_archived(registry.list_agents(), registry.all_facts())
+        recent = [{"agent_id": a.id, "name": a.name} for a in active[:_SUGGESTIONS]]
         return ToolResult(success=False, payload={
             "error": f"No agent with id {agent_id!r}. Use an id from <active_agents>, or create_agent for a new task.",
             "recently_used_agents": recent,
@@ -186,7 +188,8 @@ def create_agent(name: str, instructions: str, confirm_new: bool = False) -> Too
     """Create a new execution agent and send it its first instructions."""
     registry = get_agent_registry()
     if not confirm_new:
-        candidates = find_possible_duplicates(name, registry.list_agents())
+        active, _ = split_archived(registry.list_agents(), registry.all_facts())  # archived agents aren't duplicates
+        candidates = find_possible_duplicates(name, active)
         if candidates:
             logger.info(f"create_agent({name!r}) held back: possible duplicate of {candidates[0].agent.id}")
             return ToolResult(success=True, payload=duplicate_warning(candidates))
@@ -201,11 +204,15 @@ def create_agent(name: str, instructions: str, confirm_new: bool = False) -> Too
 def search_agents(query: str) -> ToolResult:
     """Search every execution agent by topic, person, or id."""
     registry = get_agent_registry()
-    return ToolResult(success=True, payload=agent_search_results(query, registry.list_agents(), registry.all_facts()))
+    agents, facts = registry.list_agents(), registry.all_facts()
+    _, archived = split_archived(agents, facts)
+    return ToolResult(success=True, payload=agent_search_results(query, agents, facts, {a.id for a in archived}))
 
 
 # What search_agents tells the model (shared with the routing eval)
-def agent_search_results(query: str, agents: List[AgentRecord], facts_by_id: Dict[str, Any]) -> Dict[str, Any]:
+def agent_search_results(
+    query: str, agents: List[AgentRecord], facts_by_id: Dict[str, Any], archived_ids: Collection[str] = (),
+) -> Dict[str, Any]:
     matches = rank_agents(query, agents, facts_by_id)
     if not matches:
         return {"agents": [], "total_agents": len(agents),
@@ -219,6 +226,7 @@ def agent_search_results(query: str, agents: List[AgentRecord], facts_by_id: Dic
                 "last_used": m.agent.last_used_at,
                 "open_drafts": facts_by_id.get(m.agent.id, {}).get("draft", []),
                 "live_reminders": facts_by_id.get(m.agent.id, {}).get("trigger", []),
+                **({"archived": True} if m.agent.id in archived_ids else {}),
             }
             for m in matches
         ],

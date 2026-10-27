@@ -97,6 +97,10 @@ class Settings(BaseModel):
     # How much of its own past runs an execution agent sees in its prompt (estimated tokens)
     execution_history_token_budget: int = Field(default=_env_int("OPENPOKE_EXECUTION_HISTORY_TOKENS", 4000))
 
+    # Agents idle this many days with nothing open (no open drafts, no live reminders) are archived:
+    # hidden from the working set and duplicate check, still searchable, revived on use. 0 turns it off.
+    agent_archive_after_days: int = Field(default=_env_int("OPENPOKE_ARCHIVE_AFTER_DAYS", 30))
+
     @property
     def cors_allow_origins(self) -> List[str]:
         """Parse CORS origins from comma-separated string."""

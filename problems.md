@@ -43,7 +43,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 |---|---|---|---|---|
 | P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟢 Solved |
-| P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
+| P3 | Agents are never retired, so the roster grows forever | A | High | 🟢 Solved |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🟢 Solved |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
@@ -158,10 +158,36 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Solution:** the interaction agent sees a bounded working set (the 5 most recently used agents plus the 5 best matches, each with its card) and a `search_agents` tool, instead of the whole roster. Prompt size no longer grows with the number of agents, and cards let it pick the right agent among look-alikes.
 
 ### P3: Agents are never retired
-- **Where:** [server/services/execution/roster.py](server/services/execution/roster.py)
+- **Where:** the agent registry (originally [server/services/execution/roster.py](server/services/execution/roster.py))
 - **What:** there is no archive or dormant state. The only removal is "clear history," which wipes everything, reminders included.
-- **Why it matters:** the roster only grows, which makes P2 worse over time.
-- **Solution:** —
+- **Why it matters:** the roster only grows, which makes P2 worse over time. After P2 the prompt no longer grows with the roster, but quality still decays:
+  - stale agents compete for the 5 shortlist slots
+  - the duplicate check warns about long-finished agents
+  - old cards ("awaiting approval…") look like live work
+- **Solution:** archive on read, keep everything, revive on use ([lifecycle.py](server/services/execution/lifecycle.py)).
+  - **The rule:** an agent is **archived** when it's been idle for `agent_archive_after_days` and has nothing open, meaning no open drafts and no live reminders.
+    - The threshold defaults to 30 days, set in `server/config.py` or with `OPENPOKE_ARCHIVE_AFTER_DAYS`. 0 turns archiving off.
+    - Code decides when the working set is built, from `last_used_at` and the facts table, with no LLM call.
+    - There's no background job and nothing to go stale. Setting a reminder, or using the agent (every run touches `last_used_at`), makes it active again at once.
+  - **What archived means:**
+    - It's left out of the working set and the duplicate check, so stale agents stop crowding out live ones.
+    - The prompt shows `<archived_agents count="N">`.
+    - `search_agents` still finds archived agents, marked `"archived": true`, and they can still be messaged by ID.
+    - Nothing is deleted: journal, card, facts and recall all remain.
+  - **The routing eval is unaffected.** It builds its working sets from fixed rosters, and search results only carry the new key for archived agents.
+  - **Future work:** an explicit "I'm done with X" archive tool, which would need a stored status.
+  - **Verified:** 21 tests cover:
+    - the threshold boundary
+    - open drafts and reminders keeping old agents active
+    - other facts not counting
+    - 0 disabling archiving
+    - odd timestamps
+    - the setting being read
+    - the working set and its footer, including when every agent is archived
+    - revival on use
+    - the duplicate check ignoring archived agents but still warning about active look-alikes
+    - search marking archived agents
+    - messaging an archived agent by ID
 
 ### P4: Exact-name routing; near-misses silently create new agents
 - **Where:** [server/agents/interaction_agent/tools.py:117](server/agents/interaction_agent/tools.py#L117), [server/services/execution/log_store.py:19](server/services/execution/log_store.py#L19)
