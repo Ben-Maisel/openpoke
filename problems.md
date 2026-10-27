@@ -133,6 +133,8 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P9: One global result batch
 - **Where:** [server/agents/execution_agent/batch_manager.py:44](server/agents/execution_agent/batch_manager.py#L44)
 - **What:** all in-flight execution agents share one batch, and results are delivered only when the whole batch drains. A 5-second task waits behind an unrelated 90-second one, and unrelated results get mixed into one report.
+- **Also:** batch membership is decided by *timing*, not by which agents were dispatched together. Each agent joins the batch only when its background task starts running, so an agent that finishes before its sibling has started (e.g. an instant failure) is reported separately. Found while building the P13 round-trip tests, whose fake LLM initially answered without yielding.
+- **Found by:** `test_fast_result_is_not_held_back_by_an_unrelated_slow_task` in `tests/test_round_trip.py` (strict expected failure).
 - **Solution:** —
 
 ### P10: The same agent can run concurrently
@@ -184,7 +186,12 @@ Each step builds on the previous ones. Related problems that touch the same code
         - `tests/test_execution_tools.py`: schema/registry consistency, Gmail tool→action mapping, trigger tools and ownership
         - `tests/test_email_search_task.py`: the search mini-agent, alone and called from an execution agent
       - Confirms P6 (truncated memory), P17 (phantom `gmail-execution-agent` log) and P20 (an unseen draft can be sent) as strict expected failures.
-    - [ ] 4c: batch manager and full round trip; P9 and P10 concurrency
+    - [x] **4c: full round trip and concurrency.**
+      - `tests/test_round_trip.py`, 7 tests, running the real interaction agent, batch manager, execution agents and tools with only the model and Gmail faked.
+      - The headline test runs the draft → confirm → send flow through the same agent.
+      - Batching tests cover combined reports, an isolated failure, and a timeout.
+      - The fake LLM gained `Gated` responses, which let tests hold an agent "mid-task" without sleeping, and `is_agent(name)` for scripting one specific agent.
+      - Confirms P9, P10 and P11 as strict expected failures.
   - [ ] Baseline routing eval (before P1)
 - **Solution:** —
 

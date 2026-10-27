@@ -49,6 +49,17 @@ def fake_gmail(monkeypatch):
 
 
 @pytest.fixture
+def batch_manager(monkeypatch):
+    """A fresh execution batch manager per test, so no pending batch leaks between tests."""
+    from server.agents.execution_agent.batch_manager import ExecutionBatchManager
+    from server.agents.interaction_agent import tools as interaction_tools
+
+    manager = ExecutionBatchManager(timeout_seconds=2)
+    monkeypatch.setattr(interaction_tools, "_EXECUTION_BATCH_MANAGER", manager)
+    return manager
+
+
+@pytest.fixture
 def clean_state():
     """Reset the server's global stores (chat, roster, agent logs, triggers) around a test."""
     from server.services import (

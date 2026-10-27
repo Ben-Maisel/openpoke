@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import copy
 import json
@@ -75,6 +76,36 @@ def is_search_task(call: LLMCall) -> bool:
     return "return_search_results" in call.tool_names
 
 
+def is_agent(name: str) -> Matcher:
+    """Matches calls made by one specific execution agent."""
+    return lambda call: is_execution_agent(call) and f"Agent Name: {name}\n" in (call.system or "")
+
+
+@dataclass
+class Gated:
+    """A scripted response the fake holds back until the test calls `release()`.
+
+    Lets tests control timing (e.g. "this agent is still working") without sleeping.
+    """
+
+    response: Any
+    gate: asyncio.Event = field(default_factory=asyncio.Event)
+    reached: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def release(self) -> None:
+        self.gate.set()
+
+
+async def wait_until(predicate: Callable[[], bool], timeout: float = 2.0) -> None:
+    """Yield to background tasks until `predicate()` holds, failing after `timeout` seconds."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() > deadline:
+            raise AssertionError("condition not reached before timeout")
+        await asyncio.sleep(0.005)
+
+
 @dataclass
 class ScriptedLLM:
     """Replaces the OpenRouter call. Tests queue responses; every request is recorded.
@@ -107,9 +138,16 @@ class ScriptedLLM:
         # Snapshot the inputs: the runtimes keep appending to the same list.
         call = LLMCall(model=model, system=system, messages=copy.deepcopy(messages), tools=tools)
         self.calls.append(call)
+        # A real HTTP call always yields to the event loop; without this, background
+        # tasks would run in an unrealistically strict order.
+        await asyncio.sleep(0)
         for matcher, queue in self._queues:
             if queue and matcher(call):
                 response = queue.popleft()
+                if isinstance(response, Gated):
+                    response.reached.set()
+                    await response.gate.wait()
+                    response = response.response
                 if isinstance(response, Exception):
                     raise response
                 return response
