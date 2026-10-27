@@ -51,7 +51,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P10 | The same execution agent can run twice concurrently | D | Medium | 🔴 Open |
 | P11 | Interaction-agent turns from four sources run concurrently and race | D | Medium | 🔴 Open |
 | P12 | Failures are silent; the user gets no reply | D | Medium | 🔴 Open |
-| P13 | No tests or evaluations exist | E | High | 🔴 Open |
+| P13 | No tests or evaluations exist | E | High | 🟡 In progress |
 | P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🔴 Open |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
 | P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🔴 Open |
@@ -148,6 +148,21 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 ### P13: No tests or evaluations
 - **What:** the repo has no unit tests, integration tests, or evals, so nothing about agent quality is measured.
+- **Approach:** three tiers.
+  - **Unit tests:** pure code, no LLM; run in CI.
+  - **Component tests:** agent loops driven by a scripted fake LLM; run in CI.
+  - **Evals:** real model, scored against thresholds; run manually.
+
+  Code that later problems replace is tested as part of those fixes.
+- **Progress:**
+  - [x] **Scaffolding.**
+    - A single `DATA_DIR` in `server/config.py`, overridable with `OPENPOKE_DATA_DIR`, replaces 7 hard-coded copies of the data path.
+    - `tests/conftest.py` points it at a throwaway folder and blanks API keys before the server is imported.
+    - Added `pytest.ini`, `server/requirements-dev.txt`, and smoke tests in `tests/test_smoke.py` covering the app booting, health, data isolation, and the data-dir override.
+  - [ ] CI workflow (Linux + Windows, Python 3.10 + 3.12)
+  - [ ] Unit tests: triggers, logs and memory, email processing, timezones and small stores
+  - [ ] Fake LLM and fake Gmail fixtures, plus component tests
+  - [ ] Baseline routing eval (before P1)
 - **Solution:** —
 
 ### P14: Placeholder prompt

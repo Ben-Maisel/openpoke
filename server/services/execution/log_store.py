@@ -8,12 +8,12 @@ from html import escape, unescape
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
+from ...config import DATA_DIR
 from ...logging_config import logger
 from ...utils.timezones import now_in_user_timezone
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_EXECUTION_LOG_DIR = _DATA_DIR / "execution_agents"
+_EXECUTION_LOG_DIR = DATA_DIR / "execution_agents"
 
 
 def _slugify(name: str) -> str:
