@@ -34,6 +34,7 @@ class Decision:
     cost: float = 0.0
     hit_step_limit: bool = False
     error: Optional[str] = None
+    raw_responses: List[Dict[str, Any]] = field(default_factory=list)  # the model's message at each step, verbatim
 
 
 # Render (tag, text) history entries exactly as ConversationLog.load_transcript does
@@ -72,6 +73,7 @@ async def run_decision(
 
         choices = response.get("choices") or []
         message = (choices[0].get("message") if choices else None) or {}
+        decision.raw_responses.append(message)
         tool_calls = message.get("tool_calls") or []
 
         parsed = _parse_calls(tool_calls)

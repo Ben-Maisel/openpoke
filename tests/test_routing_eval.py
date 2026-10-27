@@ -143,6 +143,14 @@ async def test_acknowledging_first_then_delegating_is_followed(fake_llm):
     assert '"status": "delivered"' in fake_llm.calls[1].messages[-1]["content"]
 
 
+async def test_raw_model_messages_are_kept_verbatim(fake_llm):
+    first = calls(("send_message_to_user", {"message": "on it"}), text="thinking out loud")
+    fake_llm.for_interaction(first, delegate("Lunch with Alice"))
+    decision = await run_decision(case(), ROSTER, model="m", api_key="k")
+    assert len(decision.raw_responses) == 2
+    assert decision.raw_responses[0] == first["choices"][0]["message"]
+
+
 async def test_parallel_delegation_records_every_route(fake_llm):
     fake_llm.for_interaction(delegate("Lunch with Alice", "Flight to Denver"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")

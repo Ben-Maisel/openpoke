@@ -208,7 +208,13 @@ Each step builds on the previous ones. Related problems that touch the same code
       - `evals/routing/data/cases.json`: 40 hand-labelled cases, split 10 explicit, 8 implicit (needs history), 6 disambiguation, 10 new task, 6 no delegation.
       - `evals/routing/dataset.py`: builds seeded rosters. They're nested (only noise grows), the correct agent sits at a random but stable position, and each case's `exclude` terms keep competing answers out of the padding.
       - `tests/test_routing_dataset.py`, 133 checks: label consistency, roster fairness at every size, nesting, reproducibility, and position spread.
-    - [ ] 5c: runner, report, and the baseline run
+    - [x] **5c: runner and report.**
+      - `python -m evals.routing` logs every decision to `evals/results/<label>/decisions.jsonl` as it completes, with the raw model output, outcome, tokens and cost. It also writes the exact rosters and a `meta.json` identity (model, seed, dataset and app-prompt fingerprints, git commit).
+      - Re-running resumes: logged decisions are skipped and only API errors are retried. A different setup is refused.
+      - `report.md` is rebuilt from the log with no API calls (`--report-only`).
+      - `tests/test_routing_runner.py`, 10 CI tests.
+      - Live smoke run: 20 decisions, all correct, $0.015.
+    - [ ] **Baseline run:** all 40 cases × 10/50/200/500 agents, results committed
 - **Solution:** —
 
 ### P14: Placeholder prompt
