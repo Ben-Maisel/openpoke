@@ -7,12 +7,12 @@ from dataclasses import dataclass
 
 from .agent import ExecutionAgent
 from .card import schedule_card_refresh
-from .facts import extract_facts
+from .facts import draft_id, extract_facts
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
-from ...services.execution import get_agent_registry
+from ...services.execution import get_agent_registry, get_draft_store
 
 
 @dataclass
@@ -111,6 +111,7 @@ class ExecutionAgentRuntime:
                     if success:
                         logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
                         self._record_facts(tool_name, tool_args, result)
+                        self._record_draft(tool_name, tool_args, result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
                         logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
@@ -166,6 +167,24 @@ class ExecutionAgentRuntime:
                     self._registry.remove_fact(self.agent.agent_id, kind, value)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning(f"[{self.agent.name}] Failed to record facts for {tool_name}: {exc}")
+
+    # Keep the draft store in step with Gmail: exact text of new drafts, and deletions; never fails the run
+    def _record_draft(self, tool_name: str, arguments: Dict[str, Any], result: Any) -> None:
+        try:
+            if tool_name == "gmail_create_draft":
+                new_id = draft_id(result)
+                if not new_id:
+                    logger.warning(f"[{self.agent.name}] Draft created but no draft ID in the result; not recorded")
+                    return
+                get_draft_store().record(
+                    new_id, agent_id=self.agent.agent_id, recipient=arguments.get("recipient_email", ""),
+                    subject=arguments.get("subject", ""), body=arguments.get("body", ""),
+                    cc=arguments.get("cc") or (), bcc=arguments.get("bcc") or (), thread_id=arguments.get("thread_id"),
+                )
+            elif tool_name == "gmail_delete_draft" and get_draft_store().get(str(arguments.get("draft_id", ""))):
+                get_draft_store().mark_deleted(str(arguments["draft_id"]))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(f"[{self.agent.name}] Failed to record draft for {tool_name}: {exc}")
 
     # Execute OpenRouter API call with system prompt, messages, and optional tool schemas
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:

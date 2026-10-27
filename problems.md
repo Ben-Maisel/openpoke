@@ -413,7 +413,13 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/interaction_agent/tools.py](server/agents/interaction_agent/tools.py), [server/services/conversation/log.py:175](server/services/conversation/log.py#L175), [web/components/chat/ChatMessages.tsx](web/components/chat/ChatMessages.tsx)
 - **What:** the UI has a dedicated "draft" bubble style, but the server records drafts as ordinary assistant replies, so it never triggers. "Verbatim" drafts depend on the interaction agent retyping text from the execution agent's report, rather than pulling the draft by ID.
 - **Planned:** when `gmail_create_draft` succeeds, record `{draft_id, agent, to, subject, body}` in a draft store. `send_draft` takes only a `draft_id` and the server renders the stored text, so no LLM retypes it. Record drafts with a `draft` role so the UI's draft bubble works. Closely linked to P20.
-- **Solution:** —
+- **Solution (in progress):**
+  1. **Draft store** ([drafts.py](server/services/execution/drafts.py)).
+     - When a worker's `gmail_create_draft` succeeds, the runtime records the exact recipient, cc/bcc, subject, body and thread under Gmail's draft ID. Deleting the draft in Gmail marks it deleted.
+     - A draft moves open → shown → approved → sent, or to deleted before it's sent. The store refuses any other move with a clear error: an unseen draft can't be approved, an unapproved draft can't be sent, and a sent draft is final.
+     - Recording the same ID again replaces the text and restarts approval.
+     - Clearing chat history clears drafts.
+     - This step changes no behavior yet. Showing, approving and gating come next.
 
 ### P17: Gmail and search actions logged under the wrong name
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py), [server/agents/execution_agent/tasks/search_email/tool.py](server/agents/execution_agent/tasks/search_email/tool.py)

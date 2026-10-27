@@ -14,7 +14,7 @@ from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.app import app
 from server.config import Settings
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_registry, get_conversation_log, get_execution_agent_logs
+from server.services import get_agent_registry, get_conversation_log, get_draft_store, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
@@ -374,8 +374,10 @@ def test_clearing_history_wipes_chat_agents_and_agent_logs(fake_llm, dispatcher)
     get_conversation_log().record_user_message("hi")
     agent = get_agent_registry().create("Lunch with Alice")
     get_execution_agent_logs().record_request(agent.id, "x")
+    get_draft_store().record("r-1", agent_id=agent.id, recipient="a@x.com", subject="s", body="b")
     with TestClient(app) as client:
         assert client.delete("/api/v1/chat/history").status_code == 200
     assert chat() == []
     assert agent_names() == []
     assert get_execution_agent_logs().list_agents() == []
+    assert get_draft_store().list_drafts() == []
