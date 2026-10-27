@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
-from server.services.execution import get_execution_agent_logs
 from server.services.timezone_store import get_timezone_store
 from server.services.triggers import TriggerRecord, get_trigger_service
 
@@ -92,7 +90,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
     },
 ]
 
-_LOG_STORE = get_execution_agent_logs()
 _TRIGGER_SERVICE = get_trigger_service()
 
 
@@ -129,12 +126,6 @@ def _create_trigger_tool(
     status: Optional[str] = None,
 ) -> Dict[str, Any]:
     timezone_value = get_timezone_store().get_timezone()
-    summary_args = {
-        "recurrence_rule": recurrence_rule,
-        "start_time": start_time,
-        "timezone": timezone_value,
-        "status": status,
-    }
     try:
         record = _TRIGGER_SERVICE.create_trigger(
             agent_id=agent_id,
@@ -145,16 +136,8 @@ def _create_trigger_tool(
             status=status,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        _LOG_STORE.record_action(
-            agent_id,
-            description=f"createTrigger failed | details={json.dumps(summary_args, ensure_ascii=False)} | error={exc}",
-        )
         return {"error": str(exc)}
 
-    _LOG_STORE.record_action(
-        agent_id,
-        description=f"createTrigger succeeded | trigger_id={record.id}",
-    )
     return {
         "trigger_id": record.id,
         "status": record.status,
@@ -192,19 +175,11 @@ def _update_trigger_tool(
             status=status,
         )
     except Exception as exc:  # pragma: no cover - defensive
-        _LOG_STORE.record_action(
-            agent_id,
-            description=f"updateTrigger failed | id={trigger_id_int} | error={exc}",
-        )
         return {"error": str(exc)}
 
     if record is None:
         return {"error": f"Trigger {trigger_id_int} not found"}
 
-    _LOG_STORE.record_action(
-        agent_id,
-        description=f"updateTrigger succeeded | trigger_id={trigger_id_int}",
-    )
     return {
         "trigger_id": record.id,
         "status": record.status,
@@ -221,16 +196,8 @@ def _list_triggers_tool(*, agent_id: str) -> Dict[str, Any]:
     try:
         records = _TRIGGER_SERVICE.list_triggers(agent_id=agent_id)
     except Exception as exc:  # pragma: no cover - defensive
-        _LOG_STORE.record_action(
-            agent_id,
-            description=f"listTriggers failed | error={exc}",
-        )
         return {"error": str(exc)}
 
-    _LOG_STORE.record_action(
-        agent_id,
-        description=f"listTriggers succeeded | count={len(records)}",
-    )
     return {"triggers": [_trigger_record_to_payload(record) for record in records]}
 
 

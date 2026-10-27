@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from html import escape
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from ...config import DATA_DIR
 from ...logging_config import logger
@@ -28,6 +29,7 @@ def _slugify(name: str) -> str:
 
 
 _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
+TOOL_CALL_TAG = "tool_call"
 
 
 class ExecutionAgentLogStore:
@@ -59,16 +61,27 @@ class ExecutionAgentLogStore:
 
     def _append(self, agent_id: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
+        with self._lock_for(agent_id):
+            self._write_locked(agent_id, tag, payload)
+
+    def _write_locked(self, agent_id: str, tag: str, payload: str) -> None:
+        """Write one entry; the caller holds the agent's lock."""
         encoded = _encode_payload(str(payload))
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         entry = f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
+        try:
+            with self._log_path(agent_id).open("a", encoding="utf-8") as handle:
+                handle.write(entry)
+        except Exception as exc:
+            logger.error(f"Failed to append to log: {exc}")
 
-        with self._lock_for(agent_id):
-            try:
-                with self._log_path(agent_id).open("a", encoding="utf-8") as handle:
-                    handle.write(entry)
-            except Exception as exc:
-                logger.error(f"Failed to append to log: {exc}")
+    def _count_locked(self, agent_id: str, tag: str) -> int:
+        """Count entries with a tag; the caller holds the agent's lock."""
+        try:
+            text = self._log_path(agent_id).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return 0
+        return sum(1 for line in text.splitlines() if line.startswith(f"<{tag} "))
 
     def _parse_line(self, line: str) -> Optional[Tuple[str, str, str]]:
         """Parse a single log line."""
@@ -104,13 +117,13 @@ class ExecutionAgentLogStore:
         """Record an incoming request from the interaction agent."""
         self._append(agent_id, "agent_request", instructions)
 
-    def record_action(self, agent_id: str, description: str) -> None:
-        """Record an agent action (tool call)."""
-        self._append(agent_id, "agent_action", description)
-
-    def record_tool_response(self, agent_id: str, tool_name: str, response: str) -> None:
-        """Record the response from a tool."""
-        self._append(agent_id, "tool_response", f"{tool_name}: {response}")
+    def record_tool_call(self, agent_id: str, tool_name: str, arguments: Any, success: bool, result: Any) -> str:
+        """Record one tool call in full (never truncated) and return its reference, e.g. 'r3'."""
+        with self._lock_for(agent_id):
+            ref = f"r{self._count_locked(agent_id, TOOL_CALL_TAG) + 1}"
+            record = {"ref": ref, "tool": tool_name, "ok": success, "arguments": arguments, "result": result}
+            self._write_locked(agent_id, TOOL_CALL_TAG, json.dumps(record, ensure_ascii=False, default=str))
+        return ref
 
     def record_agent_response(self, agent_id: str, response: str) -> None:
         """Record the agent's final response."""

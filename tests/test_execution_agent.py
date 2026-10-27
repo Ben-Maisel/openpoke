@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from fakes import calls, reply
+from fakes import calls, is_execution_agent, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
 from server.openrouter_client import OpenRouterError
 from server.services import get_agent_registry, get_execution_agent_logs
@@ -21,6 +21,10 @@ def agent(clean_state):
 
 def history(agent_id):
     return [(tag, payload) for tag, _, payload in get_execution_agent_logs().iter_entries(agent_id)]
+
+
+def tool_calls(agent_id):
+    return [json.loads(payload) for tag, payload in history(agent_id) if tag == "tool_call"]
 
 
 def tool_results(call):
@@ -46,7 +50,11 @@ async def test_tool_call_runs_and_the_result_is_fed_back(fake_llm, fake_gmail, a
         "tool": "gmail_create_draft", "status": "success", "arguments": DRAFT_ARGS,
         "result": {"successful": True, "data": {"id": "r-1"}},
     }]
-    assert [tag for tag, _ in history(agent.id)] == ["agent_action", "tool_response", "agent_response"]
+    assert [tag for tag, _ in history(agent.id)] == ["tool_call", "agent_response"]
+    assert tool_calls(agent.id) == [{
+        "ref": "r1", "tool": "gmail_create_draft", "ok": True, "arguments": DRAFT_ARGS,
+        "result": {"successful": True, "data": {"id": "r-1"}},
+    }]
 
 
 async def test_prompt_contains_identity_tools_and_past_history(fake_llm, fake_gmail, agent):
@@ -151,22 +159,22 @@ async def test_llm_outage_fails_the_run(fake_llm, fake_gmail, agent):
 
 # --- Memory fidelity (P6) and attribution (P17) ----------------------------
 
-@pytest.mark.xfail(strict=True, reason="P6: tool arguments are cut to 200 chars in agent memory, losing the draft body")
 async def test_agent_memory_keeps_the_full_draft_it_wrote(fake_llm, fake_gmail, agent):
     body = "Hi Alice, " + "lots of detail about the plan. " * 20 + "THE IMPORTANT ENDING."
-    fake_llm.for_execution(calls(("gmail_create_draft", {**DRAFT_ARGS, "body": body})), reply("Drafted"))
+    fake_llm.for_execution(calls(("gmail_create_draft", {**DRAFT_ARGS, "body": body})), reply("Drafted"),
+                           reply("Done"))
     await ExecutionAgentRuntime(agent.id).execute("Draft it")
-    assert any("THE IMPORTANT ENDING." in payload for tag, payload in history(agent.id) if tag == "agent_action")
+    assert tool_calls(agent.id)[0]["arguments"]["body"] == body
+    await ExecutionAgentRuntime(agent.id).execute("What did you write?")
+    assert "THE IMPORTANT ENDING." in fake_llm.calls_to(is_execution_agent)[-1].system
 
 
-@pytest.mark.xfail(strict=True, reason="P6: tool results are cut to 500 chars in agent memory")
 async def test_agent_memory_keeps_full_tool_results(fake_llm, fake_gmail, agent):
     for i in range(5):
         fake_gmail.drafts[f"r-{i}"] = {"id": f"r-{i}", "subject": f"Draft number {i} " + "x" * 80}
     fake_llm.for_execution(calls(("gmail_list_drafts", {})), reply("Listed"))
     await ExecutionAgentRuntime(agent.id).execute("List my drafts")
-    stored = next(payload for tag, payload in history(agent.id) if tag == "tool_response")
-    assert "Draft number 4" in stored
+    assert "Draft number 4" in json.dumps(tool_calls(agent.id)[0]["result"])
 
 
 async def test_gmail_and_search_actions_are_logged_only_under_the_acting_agent(fake_llm, fake_gmail, agent):
@@ -183,8 +191,7 @@ async def test_gmail_and_search_actions_are_logged_only_under_the_acting_agent(f
     await ExecutionAgentRuntime(agent.id).execute("Draft it, then find her lunch email")
 
     assert get_execution_agent_logs().list_agents() == [agent.id]
-    actions = [payload for tag, payload in history(agent.id) if tag == "agent_action"]
-    assert [a.split(" with")[0] for a in actions] == ["Calling gmail_create_draft", "Calling task_email_search"]
+    assert [c["tool"] for c in tool_calls(agent.id)] == ["gmail_create_draft", "task_email_search"]
 
 
 # --- Safety (P20) ----------------------------------------------------------

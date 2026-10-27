@@ -48,7 +48,7 @@ def extract_facts(tool_name: str, arguments: Dict[str, Any], result: Any) -> Fac
                                  *_as_list(args.get("bcc")), *_as_list(args.get("extra_recipients"))])
         changes.added("thread", [args.get("thread_id")])
         if tool_name == "gmail_create_draft":
-            changes.added("draft", [_draft_id(result)])
+            changes.added("draft", [draft_id(result)])
     elif tool_name == "gmail_forward_email":
         _add_addresses(changes, [args.get("recipient_email")])
     elif tool_name in ("gmail_execute_draft", "gmail_delete_draft"):
@@ -84,7 +84,7 @@ def _as_list(value: Any) -> List[Any]:
     return list(value) if isinstance(value, (list, tuple)) else [value]
 
 
-def _draft_id(result: Any) -> Optional[str]:
+def draft_id(result: Any) -> Optional[str]:
     """Composio's exact response shape isn't confirmed, so accept the common placements."""
     if not isinstance(result, dict):
         return None
@@ -100,4 +100,4 @@ def _str(value: Any) -> Optional[str]:
     return None if value is None else str(value)
 
 
-__all__ = ["FactChanges", "extract_facts"]
+__all__ = ["FactChanges", "draft_id", "extract_facts"]

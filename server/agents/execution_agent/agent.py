@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from ...services.execution import get_execution_agent_logs
+from .memory import render_history
 from ...logging_config import logger
 
 
@@ -75,29 +76,16 @@ class ExecutionAgent:
         """
         base_prompt = self.build_system_prompt()
 
-        # Load history transcript
-        transcript = self._log_store.load_transcript(self.agent_id)
+        entries = list(self._log_store.iter_entries(self.agent_id))
 
-        if transcript:
-            # Apply conversation limit if needed
+        if entries:
+            # Apply conversation limit if needed: keep the last N requests and everything after them
             if self.conversation_limit and self.conversation_limit > 0:
-                # Parse entries and limit them
-                lines = transcript.split('\n')
-                request_count = sum(1 for line in lines if '<agent_request' in line)
+                starts = [i for i, (tag, _, _) in enumerate(entries) if tag == "agent_request"]
+                if len(starts) > self.conversation_limit:
+                    entries = entries[starts[-self.conversation_limit]:]
 
-                if request_count > self.conversation_limit:
-                    # Find where to cut
-                    kept_requests = 0
-                    cutoff_index = len(lines)
-                    for i in range(len(lines) - 1, -1, -1):
-                        if '<agent_request' in lines[i]:
-                            kept_requests += 1
-                            if kept_requests == self.conversation_limit:
-                                cutoff_index = i
-                                break
-                    transcript = '\n'.join(lines[cutoff_index:])
-
-            return f"{base_prompt}\n\n# Execution History\n\n{transcript}"
+            return f"{base_prompt}\n\n# Execution History\n\n{render_history(entries)}"
 
         return base_prompt
 
@@ -121,9 +109,7 @@ class ExecutionAgent:
         """Record agent's response to the log."""
         self._log_store.record_agent_response(self.agent_id, response)
 
-    # Log tool invocation and results with truncated content for readability
-    def record_tool_execution(self, tool_name: str, arguments: str, result: str) -> None:
-        """Record tool execution details."""
-        self._log_store.record_action(self.agent_id, f"Calling {tool_name} with: {arguments[:200]}")
-        # Record the tool response
-        self._log_store.record_tool_response(self.agent_id, tool_name, result[:500])
+    # Log a tool call in full; the prompt later shows a digest of it
+    def record_tool_execution(self, tool_name: str, arguments: Dict[str, Any], success: bool, result: Any) -> str:
+        """Record a tool call and its result in full, returning its reference (e.g. 'r3')."""
+        return self._log_store.record_tool_call(self.agent_id, tool_name, arguments, success, result)

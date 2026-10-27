@@ -87,12 +87,12 @@ def tools_for(agent):
     return trigger_tools.build_registry(agent)
 
 
-def test_create_trigger_tool_returns_schedule_and_logs_under_the_agent():
+def test_create_trigger_tool_returns_schedule_without_writing_its_own_journal_entry():
     result = tools_for("Dentist")["createTrigger"](payload="Remind about dentist", start_time="2030-01-01T09:00:00Z")
     assert result["status"] == "active"
     assert result["next_trigger"] == "2030-01-01T09:00:00Z"
-    actions = [p for tag, _, p in get_execution_agent_logs().iter_entries("Dentist") if tag == "agent_action"]
-    assert actions == [f"createTrigger succeeded | trigger_id={result['trigger_id']}"]
+    # The runtime records the call in the agent's journal; the tool itself must not add a second entry.
+    assert list(get_execution_agent_logs().iter_entries("Dentist")) == []
 
 
 def test_list_triggers_tool_only_shows_the_agents_own_triggers():

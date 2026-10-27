@@ -46,7 +46,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
-| P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🔴 Open |
+| P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🟢 Solved |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
 | P8 | Server crashes on import on Windows (`fcntl`) | D | High | 🟢 Solved |
 | P9 | One global result batch: fast tasks wait for unrelated slow ones | D | High | 🔴 Open |
@@ -209,7 +209,20 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **What:** tool arguments are cut at 200 characters and results at 500 before being saved to the agent's memory. A search result containing several full emails keeps roughly the first email's headers, and a draft body is cut after 200 characters.
 - **Why it matters:** the reason to reuse an agent is its context, and the context it keeps is clipped arbitrarily.
 - **Planned:** never truncate the source of truth. Store full tool outputs on disk under a reference ID. Put a tool-specific structured digest in the prompt (IDs, senders, subjects, dates, snippets), and let the agent re-fetch details by reference. Combine this with the token-budgeted compaction from P5.
-- **Solution:** —
+- **Solution:** the record and the prompt are now separate.
+  - **The record keeps everything.** Each tool call is one `tool_call` journal entry holding the full arguments, whether it succeeded, and the full result as JSON (`ExecutionAgentLogStore.record_tool_call`). Each entry gets a per-agent reference (`r1`, `r2`, …) that later pieces use to point back to it. It replaces the two clipped `agent_action` and `tool_response` lines.
+  - **The prompt shows a digest** ([memory.py](server/agents/execution_agent/memory.py)), built by a small rule per tool:
+    - **email search:** one line per email with its ID, thread, date, sender, recipient, subject and a 150-character snippet; after 20 emails, "… N more (full result: r3)"
+    - **draft, reply or forward:** recipients, subject and the **full body**, because what the agent wrote is what it most needs to recall
+    - **send or delete draft:** the draft ID
+    - **reminders:** the trigger ID, status, next run, repeat rule and text
+    - **any other tool:** compact JSON, cut at 400 characters with a pointer to the full record
+    - **failed calls:** the error and the arguments
+  - **Old journals still work.** Entries written before this change render as plain text.
+  - **The trigger tools** also wrote their own duplicate "succeeded" lines into the agent's journal. Those writes are removed, as with P17.
+  - **Verified:**
+    - the two strict expected failures for P6 now pass as real tests: the full draft body is on disk *and* in the next run's prompt, and a 5-draft list keeps all 5
+    - new tests cover a 200 KB result stored intact, references counting up per agent, every digest rule, odd result shapes that must not crash, escaping, and rendering of old journals
 
 ## C. User overload
 

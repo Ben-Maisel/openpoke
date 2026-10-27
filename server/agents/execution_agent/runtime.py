@@ -110,18 +110,12 @@ class ExecutionAgentRuntime:
 
                     if success:
                         logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
-                        record_payload = self._safe_json_dump(result)
                         self._record_facts(tool_name, tool_args, result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
                         logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
-                        record_payload = error_detail
 
-                    self.agent.record_tool_execution(
-                        tool_name,
-                        self._safe_json_dump(tool_args),
-                        record_payload
-                    )
+                    self.agent.record_tool_execution(tool_name, tool_args, success, result)
 
                     tool_message = {
                         "role": "tool",
