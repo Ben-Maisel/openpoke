@@ -19,6 +19,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 1. **P8:** Windows crash (nothing runs without this)
 2. **P13:** test harness, plus a *baseline* eval of today's routing, so every later fix has a before/after number
+   - **P21**, **P22**, **P23:** trigger bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
 3. **P1:** agent registry with stable IDs and agent cards (foundation for all of area A)
 4. **P4** + **P14:** ID-based routing and an explicit "create agent" action; rewrite the prompts that refer to it
 5. **P2:** shortlist of relevant agents instead of the full roster
@@ -59,6 +60,9 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🔴 Open |
+| P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🔴 Open |
+| P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🔴 Open |
+| P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
 
 ---
 
@@ -160,7 +164,11 @@ Each step builds on the previous ones. Related problems that touch the same code
     - `tests/conftest.py` points it at a throwaway folder and blanks API keys before the server is imported.
     - Added `pytest.ini`, `server/requirements-dev.txt`, and smoke tests in `tests/test_smoke.py` covering the app booting, health, data isolation, and the data-dir override.
   - [x] **CI workflow.** `.github/workflows/tests.yml` runs pytest on every push and pull request across Ubuntu and Windows × Python 3.10 and 3.12 (4 jobs). Real-LLM evals are excluded from CI.
-  - [ ] Unit tests: triggers, logs and memory, email processing, timezones and small stores
+  - Unit tests:
+    - [x] **Triggers.** `tests/test_trigger_{utils,service,scheduler}.py`, 62 tests, using a real temporary SQLite file, a frozen clock, and a fake execution agent. These found P21–P23, which are tracked as strict expected failures.
+    - [ ] Logs and memory
+    - [ ] Email processing
+    - [ ] Timezones and small stores
   - [ ] Fake LLM and fake Gmail fixtures, plus component tests
   - [ ] Baseline routing eval (before P1)
 - **Solution:** —
@@ -196,6 +204,24 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py)
 - **What:** "never send without the user's confirmation" exists only as prompt text. In code, `gmail_execute_draft` sends any draft ID the LLM passes, including one the user never saw. Sending email can't be undone.
 - **Planned:** using the draft store from P16, only allow a send for a draft that was actually shown to the user, and record the approval.
+- **Solution:** —
+
+### P21: Reminders drift after DST in zero-offset timezones
+- **Where:** [server/services/triggers/utils.py:104](server/services/triggers/utils.py#L104)
+- **What:** `build_recurrence` writes the recurrence start in UTC form whenever the start time's UTC offset *happens to be zero*, when the intent was "the timezone is UTC." A London user creating "daily at 9am" in winter (UTC+0) gets a rule pinned to UTC. After clocks go forward in March, it fires at 10am local. The same applies to Ireland and Portugal.
+- **Found by:** `test_recurring_trigger_in_zero_offset_zone_keeps_local_time_across_dst_start` (marked expected failure until fixed).
+- **Solution:** —
+
+### P22: Unknown statuses silently become "active"
+- **Where:** [server/services/triggers/utils.py:44](server/services/triggers/utils.py#L44)
+- **What:** `normalize_status` maps any unrecognized value to `"active"`. An agent cancelling a reminder with `status="cancelled"` (or "deleted", "stopped") leaves it running, and the tool reports success. The only valid way to cancel is `"paused"`, which is documented only in the prompt.
+- **Found by:** `test_unrecognised_status_does_not_leave_trigger_active` (expected failure until fixed).
+- **Solution:** —
+
+### P23: Recurring reminder errors are erased
+- **Where:** [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py) (`_handle_failure`)
+- **What:** on failure, the scheduler records `last_error` and then calls `schedule_next_occurrence`, which always clears `last_error`. A recurring reminder can fail on every run and leave no trace.
+- **Found by:** `test_failed_recurring_trigger_keeps_error_and_is_rescheduled` (expected failure until fixed).
 - **Solution:** —
 
 ### P19: Single-user global state
