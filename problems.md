@@ -19,7 +19,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 1. **P8:** Windows crash (nothing runs without this)
 2. **P13:** test harness, plus a *baseline* eval of today's routing, so every later fix has a before/after number
-   - **P21**, **P22**, **P23**, **P24:** bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
+   - **P21**, **P22**, **P23**, **P24**, **P25:** bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
 3. **P1:** agent registry with stable IDs and agent cards (foundation for all of area A)
 4. **P4** + **P14:** ID-based routing and an explicit "create agent" action; rewrite the prompts that refer to it
 5. **P2:** shortlist of relevant agents instead of the full roster
@@ -64,6 +64,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🔴 Open |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
 | P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
+| P25 | Email bodies come back empty for common formats (e.g. any email with an attachment) | D | High* | 🔴 Open |
 
 ---
 
@@ -168,7 +169,7 @@ Each step builds on the previous ones. Related problems that touch the same code
   - Unit tests:
     - [x] **Triggers.** `tests/test_trigger_{utils,service,scheduler}.py`, 62 tests, using a real temporary SQLite file, a frozen clock, and a fake execution agent. These found P21–P23, which are tracked as strict expected failures.
     - [x] **Logs and memory.** `tests/test_conversation_log.py`, `tests/test_summarizer.py` and `tests/test_execution_log_store.py`, 42 tests, with the summarizer LLM faked. These found P24 and confirmed P4's shared-memory collision; both are tracked as strict expected failures.
-    - [ ] Email processing
+    - [x] **Email processing.** `tests/test_email_processing.py`, 37 tests on realistic Gmail API payloads. These found P25, tracked as strict expected failures.
     - [ ] Timezones and small stores
   - [ ] Fake LLM and fake Gmail fixtures, plus component tests
   - [ ] Baseline routing eval (before P1)
@@ -232,6 +233,19 @@ Each step builds on the previous ones. Related problems that touch the same code
   - [server/services/execution/log_store.py](server/services/execution/log_store.py)
 - **What:** each entry is stored on one line by replacing real newlines with the two characters `\n`. Existing backslashes aren't escaped first, so on read-back *any* literal `\n` in the original text becomes a newline. For example, `C:\new\notes.txt` becomes `C:` + newline + `ew` + newline + `otes.txt`. This silently alters Windows paths, code, and regexes in user messages, emails, and agent memory.
 - **Found by:** `test_literal_backslash_n_round_trips` in `tests/test_conversation_log.py` and `tests/test_execution_log_store.py` (expected failures until fixed).
+- **Solution:** —
+
+### P25: Email body extraction misses common formats
+- **Where:** [server/services/gmail/processing.py:191-224](server/services/gmail/processing.py#L191-L224) (`_extract_html_body`, `_extract_plain_body`, `post_process_text`)
+- **What:**
+  - **Nested parts are ignored.** The body search looks only one level into the Gmail `payload` tree. Gmail's usual shape for an email with an attachment nests the readable body one level deeper (`multipart/mixed` → `multipart/alternative` → `text/html`), so the cleaned body comes back **empty**.
+  - **Plain-text parts are never read.** The plain-text path checks only the top-level body. A `text/plain` part inside a multipart email is skipped, again giving an empty body.
+  - **Unpadded base64 is dropped.** Base64 without `=` padding raises on decode, and the body is silently discarded.
+  - **Legitimate text is deleted.** The noise filters remove real content, e.g. "Your Docker image: nginx:1.25 was pushed" loses everything after "image:".
+  - **An available fallback is ignored.** The email search task asks Composio for `verbose` output specifically to get a parsed `messageText` field, but processing never reads `messageText`. It looks for `htmlBody`/`textBody` instead.
+- **Why it matters:** an empty body reaches both the execution agents (search results) and the important-email classifier. An email with an attachment can't be summarized or triaged.
+- **\*Severity caveat:** confirmed against the standard Gmail API payload shape. How often it bites depends on exactly what Composio returns, which will be verified with a live fetch once Gmail is connected.
+- **Found by:** four strict expected failures in `tests/test_email_processing.py`.
 - **Solution:** —
 
 ### P19: Single-user global state
