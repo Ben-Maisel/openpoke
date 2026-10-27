@@ -1,0 +1,25 @@
+{
+  "comment": "Questions for the long-lived worker. 'expect' is a list of groups: the answer must contain at least one alternative from every group (case-insensitive). 'source' says where the answer lives: a run's request or response (in the transcript), deep inside a tool result or draft body (beyond the old 200/500-char cuts and the digest snippet), or a fact that a later run changed.",
+  "questions": [
+    {"id": "flight-confirmation", "category": "old_detail", "source": "early email, deep", "question": "What's the airline confirmation code for my Denver flight?", "expect": [["QX7R2P"]]},
+    {"id": "flight-seat", "category": "old_detail", "source": "early email, deep", "question": "Which seat am I in on the flight to Denver?", "expect": [["14C"]]},
+    {"id": "flight-arrival", "category": "old_detail", "source": "early email, deep", "question": "What time does my flight land in Denver?", "expect": [["10:38"]]},
+    {"id": "offsite-room", "category": "old_detail", "source": "early email, deep", "question": "Which room is the offsite in?", "expect": [["Larimer B"]]},
+    {"id": "flight-number", "category": "old_detail", "source": "early response", "question": "What's my flight number for the trip?", "expect": [["1482"]]},
+    {"id": "priya-email", "category": "old_detail", "source": "early request", "question": "What's Priya's email address?", "expect": [["priya.shah@acme.com"]]},
+    {"id": "dinner", "category": "old_detail", "source": "early response", "question": "When and where is the team dinner?", "expect": [["7:30"], ["Tavernetta"]]},
+    {"id": "seat-preference", "category": "preference", "source": "early request", "question": "What seat preference did I give you for flights?", "expect": [["aisle"]]},
+    {"id": "hotel-budget", "category": "preference", "source": "early request", "question": "What's my nightly budget limit for hotels?", "expect": [["250"]]},
+    {"id": "expense-cc", "category": "preference", "source": "early request", "question": "Who did I say to cc on expense emails?", "expect": [["Dana"]]},
+    {"id": "hotel-name", "category": "changed", "source": "middle response (replaces early)", "question": "Which hotel am I staying at in Denver?", "expect": [["Hyatt"]]},
+    {"id": "hotel-confirmation", "category": "changed", "source": "middle email, deep (replaces early)", "question": "What's my hotel confirmation number?", "expect": [["HY-5528"]]},
+    {"id": "hotel-rate", "category": "changed", "source": "middle email, deep (replaces early)", "question": "What's the nightly rate at my hotel?", "expect": [["239"]]},
+    {"id": "hotel-address", "category": "changed", "source": "middle email, deep", "question": "What's the street address of my hotel?", "expect": [["650 15th"]]},
+    {"id": "checkin-reminder", "category": "open_item", "source": "early tool result", "question": "What's the ID of the flight check-in reminder?", "expect": [["37"]]},
+    {"id": "open-draft", "category": "open_item", "source": "late tool result (another draft was deleted)", "question": "Which draft is still waiting for my approval? Give me its ID.", "expect": [["d-417"]]},
+    {"id": "expense-total", "category": "recent_detail", "source": "late draft body, deep", "question": "What total did the expense report draft come to?", "expect": [["1,184.60", "1184.60"]]},
+    {"id": "ride-time", "category": "recent_detail", "source": "late email, deep", "question": "What time is the airport ride pickup?", "expect": [["5:15"]]},
+    {"id": "ride-address", "category": "recent_detail", "source": "late email, deep", "question": "Where is the airport ride picking me up?", "expect": [["220 Oak"]]},
+    {"id": "deleted-draft", "category": "recent_detail", "source": "late response", "question": "Which draft did you delete most recently?", "expect": [["d-301"]]}
+  ]
+}

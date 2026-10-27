@@ -1,0 +1,149 @@
+{
+  "agent_name": "Denver offsite trip",
+  "comment": "Planted runs for the long-lived worker eval. 'early' runs open the journal, 'middle' sits halfway, 'late' closes it; filler runs fill the gaps. Emails are written compactly and expanded to full search results by dataset.py.",
+  "early": [
+    {
+      "request": "Start on my Denver trip for the Acme offsite, Nov 12-15. For flights I always want an aisle seat, and keep hotels under $250 a night. Find the flight booking.",
+      "calls": [
+        {
+          "tool": "task_email_search",
+          "arguments": {"search_query": "United flight booking Denver November"},
+          "result": [
+            {
+              "id": "18c2a41f", "thread": "18c2a41f", "from": "United Airlines <receipts@united.com>",
+              "subject": "eTicket Itinerary and Receipt for UA 1482", "date": "2026-10-02 08:14:00",
+              "text": "Thank you for choosing United. Flight UA 1482, San Francisco (SFO) to Denver (DEN), Thursday, November 12, 2026. MileagePlus member: please review your trip details below and keep this receipt for your records. Fare rules: changes permitted for a fee; basic economy fares are not eligible for changes. Baggage: first checked bag $40, second $50. Travel documents: a REAL ID-compliant license or passport is required for domestic travel starting May 2025. Departs SFO 7:05 AM, arrives DEN 10:38 AM. Seat 14C. Confirmation code: QX7R2P. Total charged to Visa ending 4417: $312.40."
+            }
+          ]
+        }
+      ],
+      "response": "Found the United booking: UA 1482 SFO to DEN on Nov 12. Noted your preferences: aisle seats, hotels under $250/night."
+    },
+    {
+      "request": "Find the hotel booking for the offsite.",
+      "calls": [
+        {
+          "tool": "task_email_search",
+          "arguments": {"search_query": "hotel reservation Denver Nov 12"},
+          "result": [
+            {
+              "id": "18c2b07d", "thread": "18c2b07d", "from": "Marriott Bonvoy <reservations@marriott.com>",
+              "subject": "Reservation Confirmation: Denver Marriott City Center", "date": "2026-10-02 11:40:00",
+              "text": "Dear guest, we look forward to welcoming you. Denver Marriott City Center, 1701 California St, Denver, CO 80202. Check-in Thursday, November 12, 2026 (after 4:00 PM). Check-out Sunday, November 15, 2026 (before 11:00 AM). Room: 1 King, City View. Cancellation: free until 48 hours before arrival. Rate: $219.00 per night plus taxes. Confirmation number: MR-4471."
+            }
+          ]
+        }
+      ],
+      "response": "Hotel booked: Denver Marriott City Center, Nov 12-15, $219/night."
+    },
+    {
+      "request": "Draft an email to Priya Shah (priya.shah@acme.com) asking whether the team dinner is still on the 13th.",
+      "calls": [
+        {
+          "tool": "gmail_create_draft",
+          "arguments": {"recipient_email": "priya.shah@acme.com", "subject": "Team dinner on the 13th?", "body": "Hi Priya,\n\nIs the offsite team dinner still on Friday the 13th? Happy to help book if needed.\n\nThanks!"},
+          "result": {"successful": true, "data": {"id": "d-301"}}
+        }
+      ],
+      "response": "Drafted d-301 to Priya asking about the team dinner. Waiting for your go-ahead to send."
+    },
+    {
+      "request": "Set a reminder to check in for my flight 24 hours before departure.",
+      "calls": [
+        {
+          "tool": "createTrigger",
+          "arguments": {"payload": "Check in for United UA 1482 (SFO to DEN)", "start_time": "2026-11-11T07:05:00-08:00"},
+          "result": {"trigger_id": 37, "status": "active", "next_trigger": "2026-11-11T07:05:00-08:00", "start_time": "2026-11-11T07:05:00-08:00", "timezone": "America/Los_Angeles", "recurrence_rule": null}
+        }
+      ],
+      "response": "Reminder 37 set to check in for UA 1482 the day before the flight."
+    },
+    {
+      "request": "Did Priya reply about the dinner?",
+      "calls": [
+        {
+          "tool": "task_email_search",
+          "arguments": {"search_query": "from:priya.shah@acme.com dinner"},
+          "result": [
+            {
+              "id": "18c3e912", "thread": "18c3e900", "from": "Priya Shah <priya.shah@acme.com>",
+              "subject": "Re: Team dinner on the 13th?", "date": "2026-10-04 16:22:00",
+              "text": "Hi! Yes, still on. A few logistics for everyone while I have you: badges will be at the front desk on day one, bring a laptop charger since outlets are limited, and the wifi password will be on the screen in the room. Dinner is Friday Nov 13 at 7:30 PM at Tavernetta, reservation under Acme. The offsite itself is in the Larimer B room on the 4th floor. See you there!"
+            }
+          ]
+        }
+      ],
+      "response": "Priya confirmed: team dinner Friday Nov 13 at 7:30 PM at Tavernetta. She also shared offsite logistics."
+    },
+    {
+      "request": "Note for later: my manager is Dana Ortiz (dana.ortiz@acme.com). CC her on anything about expenses.",
+      "calls": [],
+      "response": "Noted: cc Dana Ortiz (dana.ortiz@acme.com) on any expense-related email."
+    }
+  ],
+  "middle": [
+    {
+      "request": "The Marriott cancelled my reservation. Find the replacement booking.",
+      "calls": [
+        {
+          "tool": "task_email_search",
+          "arguments": {"search_query": "hotel cancellation rebooking Denver"},
+          "result": [
+            {
+              "id": "18c7d3a0", "thread": "18c2b07d", "from": "Marriott Bonvoy <reservations@marriott.com>",
+              "subject": "Your reservation has been cancelled", "date": "2026-10-19 09:02:00",
+              "text": "We're sorry: due to an overbooking, your reservation MR-4471 at Denver Marriott City Center has been cancelled. No charges were made. We apologize for the inconvenience."
+            },
+            {
+              "id": "18c7d9f4", "thread": "18c7d9f4", "from": "Hyatt <reservations@hyatt.com>",
+              "subject": "Booking confirmed: Hyatt Regency Denver", "date": "2026-10-19 10:47:00",
+              "text": "Thank you for booking with World of Hyatt. Your stay: Thursday, November 12 to Sunday, November 15, 2026, 3 nights. Guests: 1 adult. Room: Standard King. Hotel policies: check-in 4:00 PM, check-out 11:00 AM, no smoking, pets not permitted. Cancellation: free until 72 hours before arrival. Rate: $239.00 per night. Hyatt Regency Denver at Colorado Convention Center, 650 15th St, Denver, CO 80202. Confirmation number: HY-5528."
+            }
+          ]
+        }
+      ],
+      "response": "The Marriott reservation was cancelled for overbooking. You're now booked at the Hyatt Regency Denver for Nov 12-15."
+    }
+  ],
+  "late": [
+    {
+      "request": "Dana wants the expense report for the trip. Draft it to her.",
+      "calls": [
+        {
+          "tool": "gmail_create_draft",
+          "arguments": {"recipient_email": "dana.ortiz@acme.com", "subject": "Denver offsite expenses", "body": "Hi Dana,\n\nHere are my expenses for the Denver offsite (Nov 12-15), with receipts attached in Concur:\n\n- Flight (United UA 1482): $312.40\n- Hotel (Hyatt Regency Denver, 3 nights): $717.00\n- Ground transport: $96.20\n- Meals: $59.00\n\nTotal: $1,184.60\n\nThanks!"},
+          "result": {"successful": true, "data": {"id": "d-417"}}
+        }
+      ],
+      "response": "Drafted d-417 to Dana with the offsite expense summary. Waiting for your approval to send."
+    },
+    {
+      "request": "Book a ride to the airport for the morning of the flight and confirm the pickup.",
+      "calls": [
+        {
+          "tool": "task_email_search",
+          "arguments": {"search_query": "ride scheduled airport November 12"},
+          "result": [
+            {
+              "id": "18cb0e55", "thread": "18cb0e55", "from": "Lyft <no-reply@lyftmail.com>",
+              "subject": "Your scheduled ride is confirmed", "date": "2026-10-30 20:15:00",
+              "text": "Your ride is scheduled. We'll match you with a driver about 10 minutes before pickup and send their details then. Ride type: Lyft XL. Estimated fare: $48-$61. Pickup: Thursday, Nov 12 at 5:15 AM from 220 Oak St, San Francisco. Drop-off: SFO Terminal 3."
+            }
+          ]
+        }
+      ],
+      "response": "Airport ride scheduled with Lyft for the morning of Nov 12."
+    },
+    {
+      "request": "Priya already answered, so get rid of the old dinner draft.",
+      "calls": [
+        {
+          "tool": "gmail_delete_draft",
+          "arguments": {"draft_id": "d-301"},
+          "result": {"successful": true}
+        }
+      ],
+      "response": "Deleted draft d-301."
+    }
+  ]
+}

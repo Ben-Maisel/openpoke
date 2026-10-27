@@ -1,0 +1,69 @@
+{
+  "comment": "Routine runs that pad the journal between the planted ones. Same topic, plausible, and free of any answer (tests/test_memory_dataset.py checks). dataset.py cycles through them in a seeded order, giving each copy fresh email IDs; {n} becomes the copy number.",
+  "runs": [
+    {
+      "request": "Any new emails about the Denver trip? (check {n})",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "Denver offsite newer_than:2d"}, "result": [
+        {"from": "Acme Events <events@acme.com>", "subject": "Offsite agenda draft v{n}", "text": "Hi all, attached is the working agenda for the offsite. Day one opens with a strategy session, followed by team breakouts in the afternoon. Day two is customer panels and a roadmap review. Day three wraps with a retro. Please send topic suggestions for the breakouts by Friday. Lunch is provided each day; tell us about dietary restrictions using the form."}
+      ]}],
+      "response": "Only an agenda update from Acme Events; nothing needs action."
+    },
+    {
+      "request": "What's the weather looking like in Denver for the trip?",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "weather Denver forecast"}, "result": [
+        {"from": "Weather Digest <digest@weathernotes.com>", "subject": "Your weekly forecast: Denver, CO", "text": "Denver this week: sunny mornings with afternoon clouds. Highs in the mid 50s, lows near 30. A cold front may bring light snow to the foothills late in the week; the city itself should stay dry. Wind gusts up to 20 mph on the plains. Pack layers: mornings are crisp and evenings cool quickly after sunset."}
+      ]}],
+      "response": "Forecast for Denver: mostly sunny, highs in the 50s, cold evenings. Pack layers."
+    },
+    {
+      "request": "Look for restaurant ideas near the convention center for a solo lunch.",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "Denver restaurant recommendations"}, "result": [
+        {"from": "Eater Denver <newsletter@eater.com>", "subject": "Where to eat downtown this month", "text": "Our picks this month: a new ramen counter on Blake Street, a taqueria with excellent al pastor near Union Station, and a bakery in RiNo that sells out of croissants by 10. For a quick lunch near the convention center, the food hall on 16th Street has a dozen stalls and plenty of seating."}
+      ]}],
+      "response": "A few lunch options from Eater Denver: the 16th Street food hall is closest to the convention center."
+    },
+    {
+      "request": "Has anyone emailed about carpooling from the airport?",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "carpool airport Denver offsite"}, "result": []}],
+      "response": "No carpool emails yet."
+    },
+    {
+      "request": "Check whether the offsite slides are due before the trip.",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "offsite slides deadline"}, "result": [
+        {"from": "Jordan Lee <jordan.lee@acme.com>", "subject": "Slides for the roadmap review", "text": "Hey team, please drop your slides into the shared folder by end of day Tuesday so we can stitch the deck together. Keep it to five slides each, use the new template, and put speaker notes in the notes field rather than on the slides. Thanks!"}
+      ]}],
+      "response": "Jordan asked for roadmap review slides by end of day Tuesday, five slides max."
+    },
+    {
+      "request": "Any updates from Acme travel about the offsite? (check {n})",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "from:travel@acme.com"}, "result": [
+        {"from": "Acme Travel <travel@acme.com>", "subject": "Reminder: travel policy refresher", "text": "A quick refresher on the travel policy: book through the approved portal when possible, keep itemized receipts, and submit expenses within 30 days of returning. Economy class is standard for flights under six hours. Reach out to the travel desk with any questions about exceptions."}
+      ]}],
+      "response": "Just a travel policy refresher from Acme Travel; nothing specific to your trip."
+    },
+    {
+      "request": "Is there anything fun happening in Denver that weekend?",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "Denver events weekend"}, "result": [
+        {"from": "Visit Denver <hello@denver.org>", "subject": "This weekend in the Mile High City", "text": "Catch a hockey game downtown, browse the holiday market that opens on Larimer Square's neighbor blocks, or take in the light show at the botanic gardens. The art museum has free admission on the first Saturday. Red Rocks hosts a sunrise yoga session, weather permitting."}
+      ]}],
+      "response": "Options that weekend: a hockey game, the botanic gardens light show, and a holiday market."
+    },
+    {
+      "request": "Did the offsite organizers send a packing list?",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "offsite packing list"}, "result": []}],
+      "response": "No packing list has been sent."
+    },
+    {
+      "request": "Check if there's a team photo scheduled during the offsite.",
+      "calls": [{"tool": "task_email_search", "arguments": {"search_query": "team photo offsite"}, "result": [
+        {"from": "Acme Events <events@acme.com>", "subject": "Team photo plans", "text": "We'll take a group photo on day two right after the customer panels, outside if the weather is nice and in the lobby otherwise. Company shirts are optional. The photographer will also be around during breaks for headshots if you'd like an updated one for your profile."}
+      ]}],
+      "response": "Team photo is on day two after the customer panels; headshots available during breaks."
+    },
+    {
+      "request": "Summarize where the trip planning stands. (check {n})",
+      "calls": [],
+      "response": "Trip planning is on track; no new action items since the last check."
+    }
+  ]
+}
