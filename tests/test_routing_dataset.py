@@ -4,9 +4,14 @@ from collections import Counter
 
 import pytest
 
-from evals.routing.dataset import ROSTER_SIZES, build_roster, distractor_pool, load_cases, mentions
+import json
+from pathlib import Path
+
+from evals.routing.dataset import ROSTER_SIZES, build_roster, distractor_pool, load_cases, load_decoys, mentions
 
 CASES = load_cases()
+DECOYS = load_decoys()
+BASELINE_ROSTERS = Path(__file__).resolve().parents[1] / "evals" / "results" / "baseline" / "rosters.json"
 CATEGORIES = {"explicit_followup", "implicit_followup", "disambiguation", "new_task", "no_delegation"}
 HISTORY_TAGS = {"user_message", "poke_reply", "agent_message"}
 
@@ -109,3 +114,44 @@ def test_correct_agent_positions_are_spread_out():
 def test_impossible_roster_size_is_rejected():
     with pytest.raises(ValueError):
         build_roster(CASES[0], 10_000)
+
+
+def test_clean_rosters_still_match_the_committed_baseline_exactly():
+    # The baseline must stay reproducible: any change to roster building that alters
+    # clean rosters would silently invalidate every before/after comparison.
+    committed = json.loads(BASELINE_ROSTERS.read_text(encoding="utf-8"))
+    for case in CASES:
+        for size in ROSTER_SIZES:
+            assert build_roster(case, size) == committed[case.id][str(size)], (case.id, size)
+
+
+# --- Messy-roster decoys -------------------------------------------------------------
+
+def test_every_case_with_a_correct_agent_has_two_decoys_and_no_others_do():
+    agent_cases = {c.id for c in CASES if c.expect.kind == "agent"}
+    assert set(DECOYS) == agent_cases
+    assert all(len(names) == 2 for names in DECOYS.values())
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.id in DECOYS], ids=lambda c: c.id)
+def test_decoys_are_plausible_duplicates_not_answers(case):
+    decoys = DECOYS[case.id]
+    assert len(set(decoys)) == 2
+    assert not set(decoys) & set(case.required_agents), "a decoy must never be a correct or required agent"
+    for decoy in decoys:
+        # Realistic duplicates share the topic: each mentions a term the clean padding is kept free of.
+        assert mentions(decoy, case.exclude), f"{decoy!r} doesn't look like a duplicate of {case.expect.agents}"
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if c.id in DECOYS], ids=lambda c: c.id)
+def test_messy_rosters_are_fair_and_nested(case):
+    decoys = DECOYS[case.id]
+    rosters = [build_roster(case, size, decoys=decoys) for size in ROSTER_SIZES]
+    for size, roster in zip(ROSTER_SIZES, rosters):
+        assert len(roster) == len(set(roster)) == size
+        for agent in (*case.required_agents, *decoys):
+            assert roster.count(agent) == 1
+        padding = [n for n in roster if n not in case.required_agents and n not in decoys]
+        assert not [n for n in padding if mentions(n, case.exclude)]
+    for smaller, larger in zip(rosters, rosters[1:]):
+        assert set(smaller) <= set(larger)

@@ -117,6 +117,26 @@ def test_refuses_to_mix_a_different_setup_into_an_existing_run(responder, tmp_pa
         run(TWO_CASES, tmp_path, RunConfig(label="t", model="fake/model", sizes=(10, 50), seed=1))
 
 
+def test_clean_identity_keeps_its_original_shape():
+    # Adding variants must not change the identity of clean runs like the committed baseline.
+    from evals.routing.run import run_identity
+
+    assert set(run_identity(CONFIG)) == {"model", "seed", "dataset_sha", "app_prompt_sha"}
+
+
+def test_messy_variant_puts_decoys_in_the_rosters_and_is_a_distinct_run(responder, tmp_path):
+    messy = RunConfig(label="t", model="fake/model", sizes=(10, 50), variant="messy")
+    run(TWO_CASES, tmp_path / "messy", messy)
+    meta = json.loads((tmp_path / "messy" / "meta.json").read_text())
+    assert meta["identity"]["variant"] == "messy" and "decoys_sha" in meta["identity"]
+    roster = json.loads((tmp_path / "messy" / "rosters.json").read_text())["explicit-vercel-offer"]["10"]
+    assert {"Vercel Offer Negotiation", "Vercel Offer Follow-up", "Vercel Job Offer"} <= set(roster)
+
+    run(TWO_CASES, tmp_path / "clean")
+    with pytest.raises(RunMismatchError):
+        run(TWO_CASES, tmp_path / "clean", messy)
+
+
 def test_read_decisions_prefers_success_over_error_and_latest_over_older(tmp_path):
     path = tmp_path / "decisions.jsonl"
     base = {"case_id": "c", "roster_size": 10, "repeat": 0}

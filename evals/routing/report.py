@@ -35,6 +35,8 @@ def write_report(out_dir: Path) -> Path:
         "",
         f"- **Model:** `{identity['model']}` · **seed** {identity['seed']} · "
         f"**dataset** `{identity['dataset_sha']}` · **app prompt** `{identity['app_prompt_sha']}`",
+        f"- **Roster variant:** {identity.get('variant', 'clean')}"
+        + (" (two duplicate decoy agents per case; see `evals/routing/data/decoys.json`)" if identity.get("variant") == "messy" else ""),
         f"- **Code:** `{meta.get('git_commit', 'unknown')[:10]}`{' (uncommitted changes)' if meta.get('git_dirty') else ''}",
         f"- **Decisions:** {len(results)} · **total cost:** ${sum(r.cost for r in results):.4f}",
         "",

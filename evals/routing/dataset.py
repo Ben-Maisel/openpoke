@@ -36,6 +36,11 @@ def load_world(path: Path = DATA_DIR / "world.json") -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+# Messy-roster variant: case id -> duplicate agents that look right but don't hold the context
+def load_decoys(path: Path = DATA_DIR / "decoys.json") -> Dict[str, List[str]]:
+    return json.loads(path.read_text(encoding="utf-8"))["decoys"]
+
+
 # Every distinct agent name the world's templates can produce, sorted for determinism
 @lru_cache(maxsize=1)
 def distractor_pool() -> List[str]:
@@ -60,19 +65,21 @@ def mentions(name: str, terms: Sequence[str]) -> bool:
     return any(re.search(r"\b" + re.escape(term.lower()), name.lower()) for term in terms)
 
 
-# The case's required agents plus seeded distractors, `size` agents in total.
+# The case's required agents (plus any decoys) and seeded distractors, `size` agents in total.
 # The same seed gives the same shuffle at every size, so smaller rosters are subsets of larger ones,
-# and each required agent sits at the same relative position (fraction of the roster) at every size.
-def build_roster(case: RoutingCase, size: int, seed: int = DEFAULT_SEED) -> List[str]:
+# and each fixed agent sits at the same relative position (fraction of the roster) at every size.
+# With no decoys this is exactly the clean baseline's roster.
+def build_roster(case: RoutingCase, size: int, seed: int = DEFAULT_SEED, decoys: Sequence[str] = ()) -> List[str]:
     rng = random.Random(f"{seed}:{case.id}")
-    candidates = [n for n in distractor_pool() if n not in case.required_agents and not mentions(n, case.exclude)]
+    fixed = (*case.required_agents, *decoys)
+    candidates = [n for n in distractor_pool() if n not in fixed and not mentions(n, case.exclude)]
     rng.shuffle(candidates)
-    needed = size - len(case.required_agents)
+    needed = size - len(fixed)
     if needed < 0 or needed > len(candidates):
         raise ValueError(f"{case.id}: cannot build a roster of {size} from {len(candidates)} candidates")
 
     roster = candidates[:needed]
-    positions = [rng.random() for _ in case.required_agents]
-    for agent, fraction in zip(case.required_agents, positions):
+    positions = [rng.random() for _ in fixed]
+    for agent, fraction in zip(fixed, positions):
         roster.insert(round(fraction * len(roster)), agent)
     return roster

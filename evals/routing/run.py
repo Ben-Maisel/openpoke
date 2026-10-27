@@ -28,7 +28,7 @@ from server.agents.interaction_agent.tools import get_tool_schemas
 from server.config import get_settings
 
 from .cases import RoutingCase
-from .dataset import DATA_DIR, DEFAULT_SEED, ROSTER_SIZES, build_roster, load_cases
+from .dataset import DATA_DIR, DEFAULT_SEED, ROSTER_SIZES, build_roster, load_cases, load_decoys
 from .harness import run_decision
 from .scoring import CaseResult, Outcome, classify, is_near_miss
 
@@ -47,6 +47,7 @@ class RunConfig:
     sizes: Tuple[int, ...] = ROSTER_SIZES
     repeats: int = 1
     seed: int = DEFAULT_SEED
+    variant: str = "clean"  # "messy" adds duplicate decoy agents from data/decoys.json
 
 
 # --- Fingerprints: what makes two runs comparable -------------------------------
@@ -71,12 +72,16 @@ def _git(*args: str) -> str:
 
 
 def run_identity(config: RunConfig) -> Dict[str, Any]:
-    return {
+    identity = {
         "model": config.model,
         "seed": config.seed,
         "dataset_sha": dataset_fingerprint(),
         "app_prompt_sha": app_prompt_fingerprint(),
     }
+    if config.variant != "clean":  # clean runs keep the original identity shape
+        identity["variant"] = config.variant
+        identity["decoys_sha"] = _sha((DATA_DIR / "decoys.json").read_text(encoding="utf-8"))
+    return identity
 
 
 # --- Reading the log --------------------------------------------------------------
@@ -147,7 +152,11 @@ async def run_eval(
     })
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-    rosters = {c.id: {str(size): build_roster(c, size, config.seed) for size in config.sizes} for c in cases}
+    decoys = load_decoys() if config.variant == "messy" else {}
+    rosters = {
+        c.id: {str(size): build_roster(c, size, config.seed, decoys.get(c.id, ())) for size in config.sizes}
+        for c in cases
+    }
     (out_dir / "rosters.json").write_text(json.dumps(rosters, indent=1), encoding="utf-8")
 
     done = {k for k, r in read_decisions(decisions_path).items() if r["outcome"] != Outcome.ERROR.value}
@@ -201,7 +210,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     parser = argparse.ArgumentParser(prog="python -m evals.routing", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--label", help="results folder name (default: 'baseline', or 'smoke' with --smoke)")
+    parser.add_argument("--label", help="results folder name (default: 'baseline' or 'smoke', plus '-messy')")
+    parser.add_argument("--variant", choices=["clean", "messy"], default="clean",
+                        help="'messy' adds two duplicate decoy agents per case (see data/decoys.json)")
     parser.add_argument("--model", help="OpenRouter model id (default: the app's interaction agent model)")
     parser.add_argument("--sizes", default=",".join(map(str, ROSTER_SIZES)), help="roster sizes, comma-separated")
     parser.add_argument("--repeats", type=int, default=1)
@@ -212,7 +223,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    label = args.label or ("smoke" if args.smoke else "baseline")
+    label = args.label or ("smoke" if args.smoke else "baseline") + ("-messy" if args.variant == "messy" else "")
     out_dir = RESULTS_DIR / label
     if not args.report_only:
         sizes = tuple(int(s) for s in args.sizes.split(","))
@@ -220,7 +231,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         if args.smoke:
             cases, sizes = select_smoke_cases(cases), sizes[:2]
         config = RunConfig(label=label, model=args.model or settings.interaction_agent_model,
-                           sizes=sizes, repeats=args.repeats, seed=args.seed)
+                           sizes=sizes, repeats=args.repeats, seed=args.seed, variant=args.variant)
         stats = asyncio.run(run_eval(config, cases, out_dir, api_key=settings.openrouter_api_key,
                                      concurrency=args.concurrency))
         print(f"[{label}] ran {stats['ran']} ({stats['errors']} API errors), skipped {stats['skipped']} already logged")

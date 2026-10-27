@@ -1,0 +1,29 @@
+{
+  "_about": "Messy-roster variant. For every case with a correct agent, two duplicate agents of the kind today's name-matching creates (P4): same topic, slightly different name, but NOT the agent holding the context. With names alone the real agent can't be told apart from these unless the conversation history names it. Kept separate from cases.json so the clean baseline stays reproducible.",
+  "decoys": {
+    "explicit-landlord-lease": ["Landlord Lease Renewal", "Lease Renewal Follow-up"],
+    "explicit-vercel-offer": ["Vercel Offer Negotiation", "Vercel Offer Follow-up"],
+    "explicit-dentist-when": ["Dentist Appointment", "Dentist Reminder"],
+    "explicit-q3-priya": ["Priya Q3 Report Section", "Q3 Report Follow-up"],
+    "explicit-tokyo-hotel": ["Tokyo Hotel Booking", "Tokyo Trip"],
+    "explicit-stripe-refund": ["Stripe Refund Request", "Stripe Duplicate Charge"],
+    "explicit-gym-fee": ["Cancel Equinox Membership", "Equinox Cancellation Follow-up"],
+    "explicit-marcus-intro": ["Marcus Grace Intro", "Intro Email Marcus and Grace"],
+    "explicit-car-claim": ["Car Insurance Claim", "Geico Claim Follow-up"],
+    "explicit-board-deck": ["Hannah Board Deck Review", "Board Deck Review"],
+    "implicit-send-it": ["Omar 1:1 Reschedule", "Email to Omar about 1:1"],
+    "implicit-ask-her": ["Sofia Offsite Venue", "Offsite Venue Quote"],
+    "implicit-make-it-7": ["Sunday Call Mom Reminder", "Mom Call Reminder"],
+    "implicit-friendlier": ["Nina Overdue Invoice", "Invoice 4471 Follow-up"],
+    "implicit-cancel-that": ["Standup Notes Reminder", "Monday Standup Reminder"],
+    "implicit-cc-david": ["Reply to Ben Design Review", "Ben Design Review Email"],
+    "implicit-did-they-confirm": ["Nopa Reservation", "Friday Dinner at Nopa"],
+    "implicit-forward-it": ["Acme MSA v3", "Acme Contract from Laura"],
+    "disambig-alice-wong": ["Alice Wong Lunch", "Friday Lunch with Alice"],
+    "disambig-david-kim": ["David Kim Pricing Update", "Pricing Update Follow-up"],
+    "disambig-q4-not-q3": ["Q4 Planning", "Q4 Planning Doc Draft"],
+    "disambig-lisbon-hotel": ["Lisbon Hotel Confirmation", "Lisbon Hotel"],
+    "disambig-figma-renewal": ["Figma Renewal", "Figma Renewal Pricing"],
+    "disambig-mom-gift": ["Mom Birthday Flowers", "Mom's Birthday"]
+  }
+}
