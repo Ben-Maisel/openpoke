@@ -44,7 +44,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
 | P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🔴 Open |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
-| P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🔴 Open |
+| P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟡 In progress |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
 | P6 | Logged tool data is blindly truncated (args 200 chars, results 500 chars) | B | Medium | 🔴 Open |
 | P7 | Every important email and every trigger firing is a separate user ping | C | Medium | 🔴 Open |
@@ -140,6 +140,16 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **What:** reuse happens only if the LLM retypes an existing name exactly (case-sensitive). "Lunch with Alice" and "Alice lunch" become two agents, and the new one has no memory. Separately, names that differ only in case or punctuation ("Email to Alice" and "email to alice!") are separate roster entries but slugify to the **same log file**, so they share one memory.
 - **Why it matters:** follow-ups such as "send it" can reach an agent that doesn't know the draft. Duplicates also feed P2 and P3.
 - **Measured:** with two such duplicates per case, routing accuracy falls from 98–100% to 62–68%, and explicit follow-ups fall to roughly chance (see the messy-roster baseline under P13). Roster size barely matters; duplicates do.
+- **Agreed design (with P14):**
+  - **Two tools:** `send_message_to_agent(agent_id, …)` for existing agents (an unknown ID is an error, never a silent create), and `create_agent(name, instructions)`.
+  - **Duplicate check on create:** it warns with the closest existing agents and the model may confirm with `confirm_new`. Nothing is ever merged automatically.
+  - **The model sees** agent IDs and names (cards come with P2's shortlist), and reports carry the ID.
+  - **Evals:** both evals are rerun after the change.
+- **P4a, the duplicate detector:** `server/services/execution/matching.py`.
+  - **How it works:** it compares the *meaningful* words of agent names (generic task words like "email", "reminder", "follow up" and "with" are ignored). Two names count as likely duplicates when they share at least two meaningful words making up at least two-thirds of the shorter name's words, or when both reduce to the same single word.
+  - **Coverage:** it catches 42 of the 48 messy-eval decoys.
+  - **Known trade-off:** look-alikes differing in one word (Alice Chen vs Alice Wong, Vercel vs Stripe job offer) are flagged too. That's acceptable because the check warns and the model decides.
+  - **Tests:** `tests/test_agent_matching.py`, 15 tests.
 - **Progress:** the *shared memory* half is fixed by P1b. Memory is keyed by agent ID, so two agents can never share a file, whatever their names (`test_agents_whose_names_collide_never_share_memory`). The *duplicate creation* half (a near-miss name silently creates a new agent) remains, for ID-based routing and the duplicate check.
 - **Solution:** —
 
