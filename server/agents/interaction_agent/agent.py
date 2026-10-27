@@ -4,7 +4,7 @@ from html import escape
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-from ...services.execution import get_agent_roster
+from ...services.execution import get_agent_registry
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
@@ -49,9 +49,9 @@ def _render_conversation_history(transcript: str) -> str:
 # Format currently active execution agents into XML tags for LLM awareness
 def _render_active_agents(agents: Optional[Sequence[str]] = None) -> str:
     if agents is None:
-        roster = get_agent_roster()
-        roster.load()
-        agents = roster.get_agents()
+        # Creation order, as the old roster listed them; P2 replaces this with a shortlist.
+        records = sorted(get_agent_registry().list_agents(), key=lambda record: int(record.id[1:]))
+        agents = [record.name for record in records]
 
     if not agents:
         return "None"

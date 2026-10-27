@@ -10,6 +10,13 @@ from typing import Dict, List, Optional
 
 from .runtime import ExecutionAgentRuntime, ExecutionResult
 from ...logging_config import logger
+from ...services.execution import get_agent_registry
+
+
+# The agent's name for reports, falling back to its ID if the agent no longer exists
+def _display_name(agent_id: str) -> str:
+    record = get_agent_registry().get(agent_id)
+    return record.name if record else agent_id
 
 
 @dataclass
@@ -17,7 +24,7 @@ class PendingExecution:
     """Track a pending execution request."""
 
     request_id: str
-    agent_name: str
+    agent_id: str
     instructions: str
     batch_id: str
     created_at: datetime = field(default_factory=datetime.now)
@@ -46,7 +53,7 @@ class ExecutionBatchManager:
     # Run execution agent with timeout handling and batch coordination for interaction agent
     async def execute_agent(
         self,
-        agent_name: str,
+        agent_id: str,
         instructions: str,
         request_id: Optional[str] = None,
     ) -> ExecutionResult:
@@ -55,29 +62,31 @@ class ExecutionBatchManager:
         if not request_id:
             request_id = str(uuid.uuid4())
 
-        batch_id = await self._register_pending_execution(agent_name, instructions, request_id)
+        batch_id = await self._register_pending_execution(agent_id, instructions, request_id)
 
         try:
-            logger.info(f"[{agent_name}] Execution started")
-            runtime = ExecutionAgentRuntime(agent_name=agent_name)
+            logger.info(f"[{agent_id}] Execution started")
+            runtime = ExecutionAgentRuntime(agent_id=agent_id)
             result = await asyncio.wait_for(
                 runtime.execute(instructions),
                 timeout=self.timeout_seconds,
             )
             status = "SUCCESS" if result.success else "FAILED"
-            logger.info(f"[{agent_name}] Execution finished: {status}")
+            logger.info(f"[{agent_id}] Execution finished: {status}")
         except asyncio.TimeoutError:
-            logger.error(f"[{agent_name}] Execution timed out after {self.timeout_seconds}s")
+            logger.error(f"[{agent_id}] Execution timed out after {self.timeout_seconds}s")
             result = ExecutionResult(
-                agent_name=agent_name,
+                agent_name=_display_name(agent_id),
+                agent_id=agent_id,
                 success=False,
                 response=f"Execution timed out after {self.timeout_seconds} seconds",
                 error="Timeout",
             )
         except Exception as exc:  # pragma: no cover - defensive
-            logger.exception(f"[{agent_name}] Execution failed unexpectedly")
+            logger.exception(f"[{agent_id}] Execution failed unexpectedly")
             result = ExecutionResult(
-                agent_name=agent_name,
+                agent_name=_display_name(agent_id),
+                agent_id=agent_id,
                 success=False,
                 response=f"Execution failed: {exc}",
                 error=str(exc),
@@ -85,13 +94,13 @@ class ExecutionBatchManager:
         finally:
             self._pending.pop(request_id, None)
 
-        await self._complete_execution(batch_id, result, agent_name)
+        await self._complete_execution(batch_id, result, agent_id)
         return result
 
     # Add execution request to current batch or create new batch if none exists
     async def _register_pending_execution(
         self,
-        agent_name: str,
+        agent_id: str,
         instructions: str,
         request_id: str,
     ) -> str:
@@ -107,7 +116,7 @@ class ExecutionBatchManager:
             self._batch_state.pending += 1
             self._pending[request_id] = PendingExecution(
                 request_id=request_id,
-                agent_name=agent_name,
+                agent_id=agent_id,
                 instructions=instructions,
                 batch_id=batch_id,
             )
@@ -119,7 +128,7 @@ class ExecutionBatchManager:
         self,
         batch_id: str,
         result: ExecutionResult,
-        agent_name: str,
+        agent_id: str,
     ) -> None:
         """Record the execution result and dispatch when the batch drains."""
 
@@ -128,7 +137,7 @@ class ExecutionBatchManager:
         async with self._batch_lock:
             state = self._batch_state
             if state is None or state.batch_id != batch_id:
-                logger.warning(f"[{agent_name}] Dropping result for unknown batch")
+                logger.warning(f"[{agent_id}] Dropping result for unknown batch")
                 return
 
             state.results.append(result)
@@ -136,8 +145,8 @@ class ExecutionBatchManager:
 
             if state.pending == 0:
                 dispatch_payload = self._format_batch_payload(state.results)
-                agent_names = [entry.agent_name for entry in state.results]
-                logger.info(f"Execution batch completed: {', '.join(agent_names)}")
+                agent_ids = [entry.agent_id for entry in state.results]
+                logger.info(f"Execution batch completed: {', '.join(agent_ids)}")
                 self._batch_state = None
 
         if dispatch_payload:
@@ -150,7 +159,7 @@ class ExecutionBatchManager:
         return [
             {
                 "request_id": pending.request_id,
-                "agent_name": pending.agent_name,
+                "agent_id": pending.agent_id,
                 "batch_id": pending.batch_id,
                 "created_at": pending.created_at.isoformat(),
                 "elapsed_seconds": (datetime.now() - pending.created_at).total_seconds(),

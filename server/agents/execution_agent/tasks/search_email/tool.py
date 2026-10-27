@@ -81,7 +81,7 @@ def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:
 
 
 # Return task tool callables
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+def build_registry(agent_id: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
     """Return task tool callables."""
 
     return {

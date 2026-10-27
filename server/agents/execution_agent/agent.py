@@ -32,9 +32,10 @@ Be thorough, accurate, and efficient in your execution."""
 class ExecutionAgent:
     """Manages state and history for an execution agent."""
 
-    # Initialize execution agent with name, conversation limits, and log store access
+    # Initialize execution agent with its ID, display name, conversation limits, and log store access
     def __init__(
         self,
+        agent_id: str,
         name: str,
         conversation_limit: Optional[int] = None
     ):
@@ -42,9 +43,11 @@ class ExecutionAgent:
         Initialize an execution agent.
 
         Args:
+            agent_id: Stable registry ID (e.g., 'a17'); memory is stored under it
             name: Human-readable agent name (e.g., 'conversation with keith')
             conversation_limit: Optional limit on past conversations to include (None = all)
         """
+        self.agent_id = agent_id
         self.name = name
         self.conversation_limit = conversation_limit
         self._log_store = get_execution_agent_logs()
@@ -70,7 +73,7 @@ class ExecutionAgent:
         base_prompt = self.build_system_prompt()
 
         # Load history transcript
-        transcript = self._log_store.load_transcript(self.name)
+        transcript = self._log_store.load_transcript(self.agent_id)
 
         if transcript:
             # Apply conversation limit if needed
@@ -113,11 +116,11 @@ class ExecutionAgent:
     # Log the agent's final response to the execution log store
     def record_response(self, response: str) -> None:
         """Record agent's response to the log."""
-        self._log_store.record_agent_response(self.name, response)
+        self._log_store.record_agent_response(self.agent_id, response)
 
     # Log tool invocation and results with truncated content for readability
     def record_tool_execution(self, tool_name: str, arguments: str, result: str) -> None:
         """Record tool execution details."""
-        self._log_store.record_action(self.name, f"Calling {tool_name} with: {arguments[:200]}")
+        self._log_store.record_action(self.agent_id, f"Calling {tool_name} with: {arguments[:200]}")
         # Record the tool response
-        self._log_store.record_tool_response(self.name, tool_name, result[:500])
+        self._log_store.record_tool_response(self.agent_id, tool_name, result[:500])

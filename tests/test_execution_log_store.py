@@ -89,8 +89,14 @@ def test_slugify(name, slug):
     assert _slugify(name) == slug
 
 
-@pytest.mark.xfail(strict=True, reason="P4: names differing only in case/punctuation share one log file")
-def test_distinct_agent_names_never_share_memory(store):
-    store.record_request("Email to Alice", "draft the invite")
-    store.record_request("email to alice!", "unrelated task")
-    assert [p for _, _, p in store.iter_entries("Email to Alice")] == ["draft the invite"]
+def test_agents_whose_names_collide_never_share_memory(store, tmp_path):
+    # Before P1, memory was keyed by the slugified name, so these two shared one file (P4).
+    from server.services.execution.registry import AgentRegistry
+
+    registry = AgentRegistry(tmp_path / "registry.db")
+    first = registry.create("Email to Alice")
+    second = registry.create("email to alice!")
+    store.record_request(first.id, "draft the invite")
+    store.record_request(second.id, "unrelated task")
+    assert [p for _, _, p in store.iter_entries(first.id)] == ["draft the invite"]
+    assert [p for _, _, p in store.iter_entries(second.id)] == ["unrelated task"]

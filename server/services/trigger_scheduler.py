@@ -85,13 +85,13 @@ class TriggerScheduler:
                 "Dispatching trigger",
                 extra={
                     "trigger_id": trigger.id,
-                    "agent": trigger.agent_name,
+                    "agent": trigger.agent_id,
                     "scheduled_for": trigger.next_trigger,
                 },
             )
             execution_manager = ExecutionBatchManager()
             result = await execution_manager.execute_agent(
-                trigger.agent_name,
+                trigger.agent_id,
                 instructions,
             )
             if result.success:
@@ -103,7 +103,7 @@ class TriggerScheduler:
             self._handle_failure(trigger, _utc_now(), str(exc))
             logger.exception(
                 "Trigger execution failed unexpectedly",
-                extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
+                extra={"trigger_id": trigger.id, "agent": trigger.agent_id},
             )
         finally:
             self._in_flight.discard(trigger.id)
@@ -111,7 +111,7 @@ class TriggerScheduler:
     def _handle_success(self, trigger: TriggerRecord, fired_at: datetime) -> None:
         logger.info(
             "Trigger completed",
-            extra={"trigger_id": trigger.id, "agent": trigger.agent_name},
+            extra={"trigger_id": trigger.id, "agent": trigger.agent_id},
         )
         self._service.schedule_next_occurrence(trigger, fired_at=fired_at)
 
@@ -120,14 +120,14 @@ class TriggerScheduler:
             "Trigger execution failed",
             extra={
                 "trigger_id": trigger.id,
-                "agent": trigger.agent_name,
+                "agent": trigger.agent_id,
                 "error": error,
             },
         )
         if trigger.recurrence_rule:
             self._service.schedule_next_occurrence(trigger, fired_at=fired_at)
         else:
-            self._service.clear_next_fire(trigger.id, agent_name=trigger.agent_name)
+            self._service.clear_next_fire(trigger.id, agent_id=trigger.agent_id)
         # Record last: rescheduling clears last_error (right after a success), which used to erase this (P23).
         self._service.record_failure(trigger, error)
 

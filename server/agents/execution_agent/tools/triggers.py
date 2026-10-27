@@ -122,7 +122,7 @@ def _trigger_record_to_payload(record: TriggerRecord) -> Dict[str, Any]:
 # Create a new trigger for the specified execution agent
 def _create_trigger_tool(
     *,
-    agent_name: str,
+    agent_id: str,
     payload: str,
     recurrence_rule: Optional[str] = None,
     start_time: Optional[str] = None,
@@ -137,7 +137,7 @@ def _create_trigger_tool(
     }
     try:
         record = _TRIGGER_SERVICE.create_trigger(
-            agent_name=agent_name,
+            agent_id=agent_id,
             payload=payload,
             recurrence_rule=recurrence_rule,
             start_time=start_time,
@@ -146,13 +146,13 @@ def _create_trigger_tool(
         )
     except Exception as exc:  # pragma: no cover - defensive
         _LOG_STORE.record_action(
-            agent_name,
+            agent_id,
             description=f"createTrigger failed | details={json.dumps(summary_args, ensure_ascii=False)} | error={exc}",
         )
         return {"error": str(exc)}
 
     _LOG_STORE.record_action(
-        agent_name,
+        agent_id,
         description=f"createTrigger succeeded | trigger_id={record.id}",
     )
     return {
@@ -168,7 +168,7 @@ def _create_trigger_tool(
 # Update or pause an existing trigger owned by this execution agent
 def _update_trigger_tool(
     *,
-    agent_name: str,
+    agent_id: str,
     trigger_id: Any,
     payload: Optional[str] = None,
     recurrence_rule: Optional[str] = None,
@@ -184,7 +184,7 @@ def _update_trigger_tool(
         timezone_value = get_timezone_store().get_timezone()
         record = _TRIGGER_SERVICE.update_trigger(
             trigger_id_int,
-            agent_name=agent_name,
+            agent_id=agent_id,
             payload=payload,
             recurrence_rule=recurrence_rule,
             start_time=start_time,
@@ -193,7 +193,7 @@ def _update_trigger_tool(
         )
     except Exception as exc:  # pragma: no cover - defensive
         _LOG_STORE.record_action(
-            agent_name,
+            agent_id,
             description=f"updateTrigger failed | id={trigger_id_int} | error={exc}",
         )
         return {"error": str(exc)}
@@ -202,7 +202,7 @@ def _update_trigger_tool(
         return {"error": f"Trigger {trigger_id_int} not found"}
 
     _LOG_STORE.record_action(
-        agent_name,
+        agent_id,
         description=f"updateTrigger succeeded | trigger_id={trigger_id_int}",
     )
     return {
@@ -217,31 +217,31 @@ def _update_trigger_tool(
 
 
 # List all triggers belonging to this execution agent
-def _list_triggers_tool(*, agent_name: str) -> Dict[str, Any]:
+def _list_triggers_tool(*, agent_id: str) -> Dict[str, Any]:
     try:
-        records = _TRIGGER_SERVICE.list_triggers(agent_name=agent_name)
+        records = _TRIGGER_SERVICE.list_triggers(agent_id=agent_id)
     except Exception as exc:  # pragma: no cover - defensive
         _LOG_STORE.record_action(
-            agent_name,
+            agent_id,
             description=f"listTriggers failed | error={exc}",
         )
         return {"error": str(exc)}
 
     _LOG_STORE.record_action(
-        agent_name,
+        agent_id,
         description=f"listTriggers succeeded | count={len(records)}",
     )
     return {"triggers": [_trigger_record_to_payload(record) for record in records]}
 
 
 # Return trigger tool callables bound to a specific agent
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
+def build_registry(agent_id: str) -> Dict[str, Callable[..., Any]]:
     """Return trigger tool callables bound to a specific agent."""
 
     return {
-        "createTrigger": partial(_create_trigger_tool, agent_name=agent_name),
-        "updateTrigger": partial(_update_trigger_tool, agent_name=agent_name),
-        "listTriggers": partial(_list_triggers_tool, agent_name=agent_name),
+        "createTrigger": partial(_create_trigger_tool, agent_id=agent_id),
+        "updateTrigger": partial(_update_trigger_tool, agent_id=agent_id),
+        "listTriggers": partial(_list_triggers_tool, agent_id=agent_id),
     }
 
 

@@ -10,6 +10,7 @@ from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
+from ...services.execution import get_agent_registry
 
 
 @dataclass
@@ -20,6 +21,7 @@ class ExecutionResult:
     response: str
     error: Optional[str] = None
     tools_executed: List[str] = None
+    agent_id: str = ""
 
 
 class ExecutionAgentRuntime:
@@ -27,13 +29,17 @@ class ExecutionAgentRuntime:
 
     MAX_TOOL_ITERATIONS = 8
 
-    # Initialize execution agent runtime with settings, tools, and agent instance
-    def __init__(self, agent_name: str):
+    # Initialize execution agent runtime for a registered agent, with its settings and tools
+    def __init__(self, agent_id: str):
         settings = get_settings()
-        self.agent = ExecutionAgent(agent_name)
+        self._registry = get_agent_registry()
+        record = self._registry.get(agent_id)
+        if record is None:
+            raise ValueError(f"Unknown execution agent: {agent_id}")
+        self.agent = ExecutionAgent(record.id, record.name)
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
-        self.tool_registry = get_tool_registry(agent_name=agent_name)
+        self.tool_registry = get_tool_registry(agent_id=record.id)
         self.tool_schemas = get_tool_schemas()
 
         if not self.api_key:
@@ -42,6 +48,7 @@ class ExecutionAgentRuntime:
     # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
         """Execute the agent with given instructions."""
+        self._registry.touch(self.agent.agent_id)
         try:
             # Build system prompt with history
             system_prompt = self.agent.build_system_prompt_with_history()
@@ -130,6 +137,7 @@ class ExecutionAgentRuntime:
 
             return ExecutionResult(
                 agent_name=self.agent.name,
+                agent_id=self.agent.agent_id,
                 success=True,
                 response=final_response,
                 tools_executed=tools_executed
@@ -143,6 +151,7 @@ class ExecutionAgentRuntime:
 
             return ExecutionResult(
                 agent_name=self.agent.name,
+                agent_id=self.agent.agent_id,
                 success=False,
                 response=failure_text,
                 error=error_msg

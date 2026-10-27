@@ -61,9 +61,12 @@ def batch_manager(monkeypatch):
 
 @pytest.fixture
 def clean_state():
-    """Reset the server's global stores (chat, roster, agent logs, triggers) around a test."""
+    """Reset the server's global stores (chat, agent registry, agent logs, triggers) around a test.
+
+    Agent IDs are never reused, so tests must use the IDs `create` returns rather than assume `a1`.
+    """
     from server.services import (
-        get_agent_roster,
+        get_agent_registry,
         get_conversation_log,
         get_execution_agent_logs,
         get_trigger_service,
@@ -71,7 +74,7 @@ def clean_state():
 
     def reset():
         get_conversation_log().clear()
-        get_agent_roster().clear()
+        get_agent_registry().clear()
         get_execution_agent_logs().clear_all()
         get_trigger_service().clear_all()
 

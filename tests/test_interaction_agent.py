@@ -13,7 +13,7 @@ from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.app import app
 from server.config import Settings
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_roster, get_conversation_log, get_execution_agent_logs
+from server.services import get_agent_registry, get_conversation_log, get_execution_agent_logs
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
@@ -24,8 +24,12 @@ class RecordingDispatcher:
     def __init__(self):
         self.dispatched = []
 
-    async def execute_agent(self, agent_name, instructions, request_id=None):
-        self.dispatched.append((agent_name, instructions))
+    async def execute_agent(self, agent_id, instructions, request_id=None):
+        self.dispatched.append((agent_id, instructions))
+
+
+def agent_names():
+    return [a.name for a in get_agent_registry().list_agents()]
 
 
 @pytest.fixture
@@ -88,7 +92,7 @@ async def test_multiple_tool_calls_in_one_turn_all_run_in_order(fake_llm):
 
 async def test_prompt_contains_history_roster_and_new_message(fake_llm):
     fake_llm.for_interaction(reply("first answer"), reply("second answer"))
-    get_agent_roster().add_agent("Lunch with Alice")
+    get_agent_registry().create("Lunch with Alice")
 
     await InteractionAgentRuntime().execute("first question")
     await InteractionAgentRuntime().execute("second question")
@@ -106,14 +110,14 @@ async def test_prompt_lists_every_roster_agent(fake_llm):
     # Characterises today's behaviour (P2): the whole roster goes into every prompt.
     fake_llm.for_interaction(reply("ok"))
     for i in range(50):
-        get_agent_roster().add_agent(f"Agent {i}")
+        get_agent_registry().create(f"Agent {i}")
     await InteractionAgentRuntime().execute("hi")
     assert fake_llm.calls[0].prompt.count("<agent name=") == 50
 
 
 async def test_agent_names_are_escaped_in_the_prompt(fake_llm):
     fake_llm.for_interaction(reply("ok"))
-    get_agent_roster().add_agent('Bob "the <builder>"')
+    get_agent_registry().create('Bob "the <builder>"')
     await InteractionAgentRuntime().execute("hi")
     assert '<agent name="Bob &quot;the &lt;builder&gt;&quot;" />' in fake_llm.calls[0].prompt
 
@@ -136,9 +140,12 @@ async def test_delegating_creates_agent_logs_request_and_dispatches(fake_llm, di
     await InteractionAgentRuntime().execute("invite alice to lunch")
     await asyncio.sleep(0)  # let the background dispatch run
 
-    assert get_agent_roster().get_agents() == ["Lunch with Alice"]
-    assert [p for _, _, p in get_execution_agent_logs().iter_entries("Lunch with Alice")] == ["Draft an invite"]
-    assert dispatcher.dispatched == [("Lunch with Alice", "Draft an invite")]
+    (agent,) = get_agent_registry().list_agents()
+    assert agent.name == "Lunch with Alice"
+    assert agent.summary == "Draft an invite"  # the card starts as the creating instructions
+    # Memory and dispatch use the stable ID, not the name.
+    assert [p for _, _, p in get_execution_agent_logs().iter_entries(agent.id)] == ["Draft an invite"]
+    assert dispatcher.dispatched == [(agent.id, "Draft an invite")]
     assert '"new_agent_created": true' in tool_results(fake_llm.calls[1])[0]
 
 
@@ -149,8 +156,9 @@ async def test_same_name_reuses_the_existing_agent(fake_llm, dispatcher):
     )
     await InteractionAgentRuntime().execute("invite alice")
     await InteractionAgentRuntime().execute("send it")
-    assert get_agent_roster().get_agents() == ["Lunch with Alice"]
+    assert agent_names() == ["Lunch with Alice"]
     assert '"new_agent_created": false' in tool_results(fake_llm.calls[3])[0]
+    assert dispatcher.dispatched[0][0] == dispatcher.dispatched[1][0]  # same agent ID both times
 
 
 # --- Bad output from the model --------------------------------------------
@@ -280,12 +288,12 @@ def test_chat_api_reports_missing_api_key(monkeypatch):
     assert "API key" in response.json()["error"]
 
 
-def test_clearing_history_wipes_chat_roster_and_agent_logs(fake_llm, dispatcher):
+def test_clearing_history_wipes_chat_agents_and_agent_logs(fake_llm, dispatcher):
     get_conversation_log().record_user_message("hi")
-    get_agent_roster().add_agent("Lunch with Alice")
-    get_execution_agent_logs().record_request("Lunch with Alice", "x")
+    agent = get_agent_registry().create("Lunch with Alice")
+    get_execution_agent_logs().record_request(agent.id, "x")
     with TestClient(app) as client:
         assert client.delete("/api/v1/chat/history").status_code == 200
     assert chat() == []
-    assert get_agent_roster().get_agents() == []
+    assert agent_names() == []
     assert get_execution_agent_logs().list_agents() == []

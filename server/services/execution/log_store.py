@@ -45,27 +45,27 @@ class ExecutionAgentLogStore:
         except Exception as exc:
             logger.warning(f"Failed to create directory: {exc}")
 
-    def _lock_for(self, agent_name: str) -> threading.Lock:
+    def _lock_for(self, agent_id: str) -> threading.Lock:
         """Get or create a lock for an agent."""
-        slug = _slugify(agent_name)
+        slug = _slugify(agent_id)
         with self._global_lock:
             if slug not in self._locks:
                 self._locks[slug] = threading.Lock()
             return self._locks[slug]
 
-    def _log_path(self, agent_name: str) -> Path:
+    def _log_path(self, agent_id: str) -> Path:
         """Get log file path for an agent."""
-        return self._base_dir / f"{_slugify(agent_name)}.log"
+        return self._base_dir / f"{_slugify(agent_id)}.log"
 
-    def _append(self, agent_name: str, tag: str, payload: str) -> None:
+    def _append(self, agent_id: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
         encoded = _encode_payload(str(payload))
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         entry = f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
-        with self._lock_for(agent_name):
+        with self._lock_for(agent_id):
             try:
-                with self._log_path(agent_name).open("a", encoding="utf-8") as handle:
+                with self._log_path(agent_id).open("a", encoding="utf-8") as handle:
                     handle.write(entry)
             except Exception as exc:
                 logger.error(f"Failed to append to log: {exc}")
@@ -100,26 +100,26 @@ class ExecutionAgentLogStore:
         payload = _decode_payload(stripped[open_end + 1 : close_start])
         return tag, timestamp, payload
 
-    def record_request(self, agent_name: str, instructions: str) -> None:
+    def record_request(self, agent_id: str, instructions: str) -> None:
         """Record an incoming request from the interaction agent."""
-        self._append(agent_name, "agent_request", instructions)
+        self._append(agent_id, "agent_request", instructions)
 
-    def record_action(self, agent_name: str, description: str) -> None:
+    def record_action(self, agent_id: str, description: str) -> None:
         """Record an agent action (tool call)."""
-        self._append(agent_name, "agent_action", description)
+        self._append(agent_id, "agent_action", description)
 
-    def record_tool_response(self, agent_name: str, tool_name: str, response: str) -> None:
+    def record_tool_response(self, agent_id: str, tool_name: str, response: str) -> None:
         """Record the response from a tool."""
-        self._append(agent_name, "tool_response", f"{tool_name}: {response}")
+        self._append(agent_id, "tool_response", f"{tool_name}: {response}")
 
-    def record_agent_response(self, agent_name: str, response: str) -> None:
+    def record_agent_response(self, agent_id: str, response: str) -> None:
         """Record the agent's final response."""
-        self._append(agent_name, "agent_response", response)
+        self._append(agent_id, "agent_response", response)
 
-    def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str, str]]:
+    def iter_entries(self, agent_id: str) -> Iterator[Tuple[str, str, str]]:
         """Iterate over all log entries for an agent."""
-        path = self._log_path(agent_name)
-        with self._lock_for(agent_name):
+        path = self._log_path(agent_id)
+        with self._lock_for(agent_id):
             try:
                 lines = path.read_text(encoding="utf-8").splitlines()
             except FileNotFoundError:
@@ -133,10 +133,10 @@ class ExecutionAgentLogStore:
             if parsed is not None:
                 yield parsed
 
-    def load_transcript(self, agent_name: str) -> str:
+    def load_transcript(self, agent_id: str) -> str:
         """Load the full transcript for inclusion in system prompt."""
         parts: List[str] = []
-        for tag, timestamp, payload in self.iter_entries(agent_name):
+        for tag, timestamp, payload in self.iter_entries(agent_id):
             escaped = escape(payload, quote=False)
             if timestamp:
                 parts.append(f"<{tag} timestamp=\"{timestamp}\">{escaped}</{tag}>")
@@ -144,9 +144,9 @@ class ExecutionAgentLogStore:
                 parts.append(f"<{tag}>{escaped}</{tag}>")
         return "\n".join(parts)
 
-    def load_recent(self, agent_name: str, limit: int = 10) -> list[tuple[str, str, str]]:
+    def load_recent(self, agent_id: str, limit: int = 10) -> list[tuple[str, str, str]]:
         """Load recent log entries."""
-        entries = list(self.iter_entries(agent_name))
+        entries = list(self.iter_entries(agent_id))
         return entries[-limit:] if entries else []
 
     def list_agents(self) -> list[str]:

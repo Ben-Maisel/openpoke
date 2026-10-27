@@ -14,7 +14,7 @@ pytestmark = pytest.mark.usefixtures("clean_state")
 
 def test_every_advertised_tool_has_an_implementation_and_vice_versa():
     schema_names = {schema["function"]["name"] for schema in get_tool_schemas()}
-    assert schema_names == set(get_tool_registry(agent_name="a"))
+    assert schema_names == set(get_tool_registry(agent_id="a"))
 
 
 def test_tool_names_are_unique():

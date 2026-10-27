@@ -22,15 +22,15 @@ class FakeBatchManager:
     outcome: object = "success"  # "success", "failure", or an Exception to raise
     gate: asyncio.Event | None = None
 
-    async def execute_agent(self, agent_name, instructions, request_id=None):
-        FakeBatchManager.calls.append((agent_name, instructions))
+    async def execute_agent(self, agent_id, instructions, request_id=None):
+        FakeBatchManager.calls.append((agent_id, instructions))
         if FakeBatchManager.gate is not None:
             await FakeBatchManager.gate.wait()
         if isinstance(FakeBatchManager.outcome, Exception):
             raise FakeBatchManager.outcome
         success = FakeBatchManager.outcome == "success"
         return ExecutionResult(
-            agent_name=agent_name, success=success,
+            agent_name=agent_id, agent_id=agent_id, success=success,
             response="done" if success else "boom", error=None if success else "boom",
         )
 
@@ -53,13 +53,13 @@ def scheduler(service, monkeypatch):
 
 
 def _reload(service, record):
-    return service.list_triggers(agent_name=record.agent_name)[0]
+    return service.list_triggers(agent_id=record.agent_id)[0]
 
 
 # --- executing a single trigger ------------------------------------------
 
 async def test_successful_one_time_trigger_runs_owner_agent_and_completes(scheduler, service):
-    record = service.create_trigger(agent_name="dentist", payload="Remind about dentist")
+    record = service.create_trigger(agent_id="dentist", payload="Remind about dentist")
     await scheduler._execute_trigger(record)
 
     assert FakeBatchManager.calls[0][0] == "dentist"
@@ -70,7 +70,7 @@ async def test_successful_one_time_trigger_runs_owner_agent_and_completes(schedu
 
 async def test_successful_recurring_trigger_is_rescheduled(scheduler, service):
     record = service.create_trigger(
-        agent_name="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+        agent_id="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
     )
     await scheduler._execute_trigger(record)
     after = _reload(service, record)
@@ -79,7 +79,7 @@ async def test_successful_recurring_trigger_is_rescheduled(scheduler, service):
 
 async def test_failed_one_time_trigger_records_error_and_stops(scheduler, service):
     FakeBatchManager.outcome = "failure"
-    record = service.create_trigger(agent_name="a", payload="p")
+    record = service.create_trigger(agent_id="a", payload="p")
     await scheduler._execute_trigger(record)
     after = _reload(service, record)
     assert after.last_error == "boom"
@@ -89,7 +89,7 @@ async def test_failed_one_time_trigger_records_error_and_stops(scheduler, servic
 async def test_failed_recurring_trigger_keeps_error_and_is_rescheduled(scheduler, service):
     FakeBatchManager.outcome = "failure"
     record = service.create_trigger(
-        agent_name="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+        agent_id="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
     )
     await scheduler._execute_trigger(record)
     after = _reload(service, record)
@@ -100,7 +100,7 @@ async def test_failed_recurring_trigger_keeps_error_and_is_rescheduled(scheduler
 async def test_a_later_success_clears_the_previous_error(scheduler, service):
     FakeBatchManager.outcome = "failure"
     record = service.create_trigger(
-        agent_name="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+        agent_id="a", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
     )
     await scheduler._execute_trigger(record)
     FakeBatchManager.outcome = "success"
@@ -114,7 +114,7 @@ async def test_failure_is_visible_to_the_owning_agent_through_list_triggers(sche
     monkeypatch.setattr(trigger_tools, "_TRIGGER_SERVICE", service)
     FakeBatchManager.outcome = "failure"
     record = service.create_trigger(
-        agent_name="Morning Summary", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+        agent_id="Morning Summary", payload="p", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
     )
     await scheduler._execute_trigger(record)
     listed = trigger_tools.build_registry("Morning Summary")["listTriggers"]()["triggers"]
@@ -123,7 +123,7 @@ async def test_failure_is_visible_to_the_owning_agent_through_list_triggers(sche
 
 async def test_crashing_agent_is_treated_as_failure(scheduler, service):
     FakeBatchManager.outcome = RuntimeError("agent exploded")
-    record = service.create_trigger(agent_name="a", payload="p")
+    record = service.create_trigger(agent_id="a", payload="p")
     await scheduler._execute_trigger(record)
     after = _reload(service, record)
     assert "agent exploded" in after.last_error
@@ -133,7 +133,7 @@ async def test_crashing_agent_is_treated_as_failure(scheduler, service):
 
 def test_instructions_include_trigger_metadata_and_payload(scheduler, service):
     record = service.create_trigger(
-        agent_name="a", payload="Check the flight", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
+        agent_id="a", payload="Check the flight", recurrence_rule="FREQ=DAILY", start_time="2026-10-26T12:00:00Z"
     )
     text = scheduler._format_instructions(record, FIXED_NOW)
     assert f"Trigger ID: {record.id}" in text
@@ -145,7 +145,7 @@ def test_instructions_include_trigger_metadata_and_payload(scheduler, service):
 
 async def test_poll_dispatches_each_due_trigger_once_while_in_flight(scheduler, service):
     FakeBatchManager.gate = asyncio.Event()  # hold the run open
-    service.create_trigger(agent_name="a", payload="p")
+    service.create_trigger(agent_id="a", payload="p")
 
     await scheduler._poll_once()
     await scheduler._poll_once()  # still due, but already running
@@ -159,8 +159,8 @@ async def test_poll_dispatches_each_due_trigger_once_while_in_flight(scheduler, 
 
 
 async def test_poll_ignores_paused_and_future_triggers(scheduler, service):
-    service.create_trigger(agent_name="a", payload="p", status="paused")
-    service.create_trigger(agent_name="a", payload="p", start_time="2026-10-27T12:00:00Z")
+    service.create_trigger(agent_id="a", payload="p", status="paused")
+    service.create_trigger(agent_id="a", payload="p", start_time="2026-10-27T12:00:00Z")
     await scheduler._poll_once()
     await asyncio.sleep(0)
     assert FakeBatchManager.calls == []

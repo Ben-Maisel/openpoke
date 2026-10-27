@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from ...logging_config import logger
 from ...services.conversation import get_conversation_log
-from ...services.execution import get_agent_roster, get_execution_agent_logs
+from ...services.execution import get_agent_registry, get_execution_agent_logs
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -106,27 +106,28 @@ TOOL_SCHEMAS = [
 ]
 
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
+# A new agent's card starts as the instructions it was created with (refreshed after each run, P1d)
+_INITIAL_SUMMARY_CHARS = 500
 
 
 # Create or reuse execution agent and dispatch instructions asynchronously
 def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
-    roster = get_agent_roster()
-    roster.load()
-    existing_agents = set(roster.get_agents())
-    is_new = agent_name not in existing_agents
-
+    # Until P4 the model still addresses agents by name: reuse an exact match, else register a new one.
+    registry = get_agent_registry()
+    agent = registry.find_by_name(agent_name)
+    is_new = agent is None
     if is_new:
-        roster.add_agent(agent_name)
+        agent = registry.create(agent_name, summary=instructions[:_INITIAL_SUMMARY_CHARS])
 
-    get_execution_agent_logs().record_request(agent_name, instructions)
+    get_execution_agent_logs().record_request(agent.id, instructions)
 
     action = "Created" if is_new else "Reused"
-    logger.info(f"{action} agent: {agent_name}")
+    logger.info(f"{action} agent: {agent.id} ({agent.name})")
 
     async def _execute_async() -> None:
         try:
-            result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
+            result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent.id, instructions)
             status = "SUCCESS" if result.success else "FAILED"
             logger.info(f"Agent '{agent_name}' completed: {status}")
         except Exception as exc:  # pragma: no cover - defensive

@@ -83,7 +83,17 @@ Each step builds on the previous ones. Related problems that touch the same code
   - **Routing (P2/P4):** the interaction agent sees a hot cache of the ~5 most recently used agents plus a shortlist of ~5 search matches over names, cards and facts, all in one prompt, with a `search_agents` tool as a fallback. Creating an agent is an explicit action that checks for likely duplicates first.
 - **Progress:**
   - [x] **P1a: the registry.** `server/services/execution/registry.py`: SQLite-backed `AgentRegistry` holding agents (ID, name, summary, status, created / last used, run count) and their facts, validated by kind. IDs come from SQLite `AUTOINCREMENT`, so they are never reused, even after a delete or clear. `tests/test_agent_registry.py`, 27 tests. Not yet used by the app.
-  - [ ] P1b: switch agent memory and triggers to IDs; the interaction agent still routes by name until P4
+  - [x] **P1b: the app runs on IDs.**
+    - **Delegation:** `send_message_to_agent` resolves the model's agent name to a registry agent (exact match reused, otherwise created, with the creating instructions as the starting card summary) and dispatches by ID.
+    - **Execution:** the execution runtime loads the agent by ID, records each run on its card, and returns both ID and name.
+    - **Storage:** agent memory files are keyed by ID (`a1.log`), and triggers are owned by ID. The trigger table's `agent_name` column is renamed to `agent_id` in place for existing databases.
+    - **Cleanup:** `roster.py` is removed; "clear history" clears the registry.
+    - **Unchanged on purpose:** the interaction agent still sees and uses names until P4. The app-prompt fingerprint is unchanged (`44a60bb84fac425a`), so the committed baselines stay comparable.
+    - **Verified:**
+      - 589 tests pass
+      - P4's memory-collision test now passes
+      - new tests cover run counting, ID + name on results, unknown IDs, same-name agents keeping separate memories, and the trigger DB migration
+      - a live end-to-end turn on Haiku registered `a1`, ran it, and created a reminder owned by `a1`
   - [ ] P1c: record facts from tool calls
   - [ ] P1d: refresh the card summary after each run
   - [ ] P1e: one-time import of existing roster and memory files
@@ -106,6 +116,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **What:** reuse happens only if the LLM retypes an existing name exactly (case-sensitive). "Lunch with Alice" and "Alice lunch" become two agents, and the new one has no memory. Separately, names that differ only in case or punctuation ("Email to Alice" and "email to alice!") are separate roster entries but slugify to the **same log file**, so they share one memory.
 - **Why it matters:** follow-ups such as "send it" can reach an agent that doesn't know the draft. Duplicates also feed P2 and P3.
 - **Measured:** with two such duplicates per case, routing accuracy falls from 98–100% to 62–68%, and explicit follow-ups fall to roughly chance (see the messy-roster baseline under P13). Roster size barely matters; duplicates do.
+- **Progress:** the *shared memory* half is fixed by P1b. Memory is keyed by agent ID, so two agents can never share a file, whatever their names (`test_agents_whose_names_collide_never_share_memory`). The *duplicate creation* half (a near-miss name silently creates a new agent) remains, for ID-based routing and the duplicate check.
 - **Solution:** —
 
 ## B. Worker overload

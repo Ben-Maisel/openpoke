@@ -11,7 +11,7 @@ import pytest
 from fakes import Gated, calls, is_agent, is_interaction_agent, reply, wait_until
 from server.agents.interaction_agent.runtime import InteractionAgentRuntime
 from server.openrouter_client import OpenRouterError
-from server.services import get_agent_roster, get_conversation_log
+from server.services import get_agent_registry, get_conversation_log
 
 pytestmark = pytest.mark.usefixtures("clean_state", "batch_manager")
 
@@ -75,7 +75,8 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
         ("assistant", "sent!"),
     ]
     assert [m["recipient_email"] for m in fake_gmail.sent] == ["alice@example.com"]
-    assert get_agent_roster().get_agents() == [AGENT]
+    (agent,) = get_agent_registry().list_agents()
+    assert (agent.name, agent.run_count) == (AGENT, 2)  # one agent, used for both runs
     # The second run of the agent remembered the first: that is what made "send it" work.
     second_run_prompt = fake_llm.calls_to(is_agent(AGENT))[2].system
     assert "Draft r-1 created" in second_run_prompt

@@ -5,6 +5,7 @@ import pytest
 from fakes import calls, reply
 from server.agents.execution_agent.runtime import ExecutionAgentRuntime
 from server.agents.execution_agent.tasks.search_email.tool import MAX_LLM_ITERATIONS, task_email_search
+from server.services import get_agent_registry
 
 pytestmark = pytest.mark.usefixtures("clean_state")
 
@@ -90,6 +91,7 @@ async def test_execution_agent_can_use_search_as_a_tool(fake_llm, inbox):
         calls(("gmail_fetch_emails", {"query": "from:alice"})),
         calls(("return_search_results", {"message_ids": ["m-1"]})),
     )
-    result = await ExecutionAgentRuntime("Lunch with Alice").execute("Where did Alice want to eat?")
+    agent = get_agent_registry().create("Lunch with Alice")
+    result = await ExecutionAgentRuntime(agent.id).execute("Where did Alice want to eat?")
     assert result.response == "Alice suggested Rosa's"
     assert "Noon at Rosa" in fake_llm.calls_to(lambda c: "gmail_create_draft" in c.tool_names)[1].messages[-1]["content"]
