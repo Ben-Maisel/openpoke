@@ -100,27 +100,63 @@ async def test_prompt_contains_history_roster_and_new_message(fake_llm):
 
     prompt = fake_llm.calls[1].prompt
     assert "<conversation_history>" in prompt and "first question" in prompt and "first answer" in prompt
-    assert f'<agent id="{agent.id}" name="Lunch with Alice" />' in prompt
+    assert f'<agent id="{agent.id}" name="Lunch with Alice" last_used=' in prompt
     assert prompt.rstrip().endswith("<new_user_message>\nsecond question\n</new_user_message>")
     # The new message must not also appear in the history block.
     history = prompt.split("</conversation_history>")[0]
     assert "second question" not in history
 
 
-async def test_prompt_lists_every_roster_agent(fake_llm):
-    # Characterises today's behaviour (P2): the whole roster goes into every prompt.
+async def test_prompt_shows_a_bounded_working_set_not_the_whole_roster(fake_llm):
+    # P2: however many agents exist, only the recent ones and the best matches are shown.
     fake_llm.for_interaction(reply("ok"))
     for i in range(50):
-        get_agent_registry().create(f"Agent {i}")
+        get_agent_registry().create(f"Errand {i}")
     await InteractionAgentRuntime().execute("hi")
-    assert fake_llm.calls[0].prompt.count("<agent id=") == 50
+    prompt = fake_llm.calls[0].prompt
+    assert prompt.count("<agent id=") == 5  # the hot cache; "hi" matches nothing
+    assert '<other_agents count="45">' in prompt
+
+
+async def test_an_older_agent_matching_the_message_is_shown_with_its_card(fake_llm):
+    registry = get_agent_registry()
+    lease = registry.create("Lease Renewal with Landlord", summary="Asked the landlord about renewing; awaiting reply")
+    registry.add_facts(lease.id, "draft", ["r-9"])
+    registry.add_facts(lease.id, "trigger", ["4"])
+    for i in range(8):  # newer agents push the lease agent out of the hot cache
+        registry.create(f"Errand {i}")
+        registry.touch(registry.list_agents()[0].id)
+    fake_llm.for_interaction(reply("ok"))
+    await InteractionAgentRuntime().execute("did the landlord reply about the lease?")
+
+    matching = fake_llm.calls[0].prompt.split("<matching_agents>")[1].split("</matching_agents>")[0]
+    assert f'<agent id="{lease.id}" name="Lease Renewal with Landlord"' in matching
+    assert "Asked the landlord about renewing; awaiting reply Open drafts: r-9. Live reminders: 4." in matching
+
+
+async def test_search_agents_tool_finds_agents_that_are_not_shown(fake_llm):
+    registry = get_agent_registry()
+    lease = registry.create("Lease Renewal with Landlord", summary="Awaiting landlord reply")
+    fake_llm.for_interaction(calls(("search_agents", {"query": "landlord lease"})), reply("found it"))
+    await InteractionAgentRuntime().execute("hmm")
+    found = json.loads(tool_results(fake_llm.calls[1])[0])["result"]
+    assert [a["agent_id"] for a in found["agents"]] == [lease.id]
+    assert found["agents"][0]["summary"] == "Awaiting landlord reply" and found["total_agents"] == 1
+
+
+async def test_search_agents_tool_says_when_nothing_matches(fake_llm):
+    get_agent_registry().create("Lease Renewal with Landlord")
+    fake_llm.for_interaction(calls(("search_agents", {"query": "denver flights"})), reply("nothing"))
+    await InteractionAgentRuntime().execute("hmm")
+    found = json.loads(tool_results(fake_llm.calls[1])[0])["result"]
+    assert found["agents"] == [] and "create_agent" in found["note"]
 
 
 async def test_agent_names_are_escaped_in_the_prompt(fake_llm):
     fake_llm.for_interaction(reply("ok"))
     agent = get_agent_registry().create('Bob "the <builder>"')
     await InteractionAgentRuntime().execute("hi")
-    assert f'<agent id="{agent.id}" name="Bob &quot;the &lt;builder&gt;&quot;" />' in fake_llm.calls[0].prompt
+    assert f'<agent id="{agent.id}" name="Bob &quot;the &lt;builder&gt;&quot;"' in fake_llm.calls[0].prompt
 
 
 async def test_agent_reports_arrive_as_agent_messages(fake_llm):

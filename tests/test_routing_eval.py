@@ -132,7 +132,7 @@ async def test_prompt_is_built_by_the_app_with_the_case_roster(fake_llm, clean_s
 
     call = fake_llm.calls[0]
     assert call.prompt.count("<agent id=") == len(ROSTER)  # the case roster, not the (empty) live one
-    assert '<agent id="a1" name="Lunch with Alice" />' in call.prompt
+    assert '<agent id="a1" name="Lunch with Alice" last_used=' in call.prompt
     assert "invite alice to lunch" in call.prompt.split("</conversation_history>")[0]
     assert call.prompt.rstrip().endswith("<new_user_message>\ndid alice reply?\n</new_user_message>")
     assert "send_message_to_agent" in call.tool_names and call.system.startswith("You are OpenPoke")
@@ -238,3 +238,34 @@ async def test_confirmed_duplicate_still_counts_as_a_duplicate(fake_llm):
     assert decision.routes == ["new:Lunch with Alice"]
     assert classify(LUNCH, decision.routes, ROSTER) is Outcome.DUPLICATE
     assert is_near_miss(decision.routes[0], ROSTER) is True  # a created agent named like an existing one
+
+
+# --- Working set in the eval (P2) ------------------------------------------------------
+
+BIG_ROSTER = [f"Errand {i}" for i in range(1, 200)] + ["Lunch with Alice"]
+
+
+async def test_eval_prompt_shows_the_apps_bounded_working_set(fake_llm):
+    fake_llm.for_interaction(reply("ok"))
+    decision = await run_decision(case(), BIG_ROSTER, model="m", api_key="k")
+    prompt = fake_llm.calls[0].prompt
+    assert decision.agents_shown == prompt.count("<agent id=") <= 10
+    assert '<other_agents count="' in prompt
+    assert 'name="Lunch with Alice"' in prompt  # the newest agent is in the hot cache
+
+
+async def test_eval_cards_come_from_the_supplied_summaries(fake_llm):
+    fake_llm.for_interaction(reply("ok"))
+    await run_decision(case(), ROSTER, model="m", api_key="k",
+                       summaries={"Lunch with Alice": "Invite sent; awaiting Alice's reply"})
+    assert ">Invite sent; awaiting Alice's reply</agent>" in fake_llm.calls[0].prompt
+
+
+async def test_eval_simulates_search_agents_over_the_whole_roster(fake_llm):
+    roster = ["Lease Renewal with Landlord"] + [f"Errand {i}" for i in range(1, 50)]  # the lease agent is oldest
+    fake_llm.for_interaction(calls(("search_agents", {"query": "landlord lease"})), send("a1"))
+    decision = await run_decision(case("did the landlord reply?", Expectation("agent", ("Lease Renewal with Landlord",))),
+                                  roster, model="m", api_key="k")
+    found = json.loads(fake_llm.calls[1].messages[-1]["content"])
+    assert [a["agent_id"] for a in found["agents"]] == ["a1"]
+    assert (decision.routes, decision.searches) == (["Lease Renewal with Landlord"], 1)

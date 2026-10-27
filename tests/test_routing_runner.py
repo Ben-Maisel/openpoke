@@ -29,7 +29,7 @@ class Responder:
         prompt = messages[0]["content"]
         if self.fail_message and self.fail_message in prompt:
             raise OpenRouterError("503 upstream")
-        vercel_id = re.search(r'<agent id="(a\d+)" name="Vercel Job Offer" />', prompt)
+        vercel_id = re.search(r'<agent id="(a\d+)" name="Vercel Job Offer"', prompt)
         response = (calls(("send_message_to_agent", {"agent_id": vercel_id.group(1), "instructions": "check"}))
                     if "vercel offer" in prompt else reply("you're welcome!"))
         response["usage"] = {"prompt_tokens": prompt.count("<agent id=") * 10 + 4000, "completion_tokens": 20, "cost": 0.0005}

@@ -134,7 +134,14 @@ Each step builds on the previous ones. Related problems that touch the same code
     - **`select_working_set`:** returns the hot cache (5 most recently used) plus the top 5 matches not already shown, so at most 10 agents are listed whatever the roster size.
     - **`AgentRegistry.all_facts()`:** loads every agent's facts in one query.
     - **Tests:** `tests/test_agent_search.py`, 17 tests, including the card telling look-alikes apart and a 500-agent roster yielding a 10-agent working set. Not yet used by the app.
-  - [ ] P2b: show the working set with cards in the prompt, and add the `search_agents` tool
+  - [x] **P2b: the prompt shows the working set, not the roster.**
+    - **What's in the prompt:** `<active_agents>` now holds `<recent_agents>` (hot cache of 5) and `<matching_agents>` (top 5 search matches). Each agent appears as a card: id, name, last used, summary, open drafts and live reminders. A `<other_agents count="N">` note points to the search tool.
+    - **Search input:** the new message plus the last ~600 characters of conversation, so pronoun follow-ups still have something to match.
+    - **New `search_agents(query)` tool:** searches every agent and returns up to 5 cards. Its reply format is shared with the eval harness.
+    - **System prompt:** explains the groups, says to pick by card rather than by name, and to search before creating.
+    - **Eval harness:** builds the same working set with the app's functions, giving roster position as recency, and simulates `search_agents`. It records agents shown and searches made.
+    - **Tests:** 670 pass, with new ones for the bounded working set (50 agents → 5 shown + "45 others"), an older matching agent shown with its full card, `search_agents` hits and misses, and the harness equivalents.
+    - **Live (Haiku), 31 agents:** "did tom ever get back to me about the lease?" routed straight to the oldest agent, whose card (not its name) mentions Tom.
   - [ ] P2c: give eval roster agents realistic cards, then rerun both evals
 - **Solution:** —
 

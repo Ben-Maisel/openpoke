@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from html import escape
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from server.agents.interaction_agent.agent import build_system_prompt, prepare_message_with_history
-from server.agents.interaction_agent.tools import duplicate_warning, get_tool_schemas
+from server.agents.interaction_agent.agent import build_system_prompt, prepare_message_with_history, routing_query
+from server.agents.interaction_agent.tools import agent_search_results, duplicate_warning, get_tool_schemas
 from server.openrouter_client import request_chat_completion
 from server.services.execution.matching import find_possible_duplicates
 from server.services.execution.registry import AgentRecord
+from server.services.execution.search import select_working_set
 
 from .cases import RoutingCase
 from .scoring import NEW_AGENT_PREFIX
@@ -24,6 +26,7 @@ _FAKE_TOOL_RESULTS = {
     "wait": {"status": "waiting"},
 }
 _HISTORY_TIMESTAMP = "2026-10-26 09:00:00"
+_ROSTER_EPOCH = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
 
 @dataclass
@@ -32,6 +35,8 @@ class Decision:
 
     routes: List[str] = field(default_factory=list)  # agent names delegated to; created agents are "new:<name>"
     duplicate_warnings: int = 0  # create_agent calls held back by the duplicate check
+    searches: int = 0  # search_agents calls
+    agents_shown: int = 0  # agents in the prompt's working set
     steps: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -39,6 +44,17 @@ class Decision:
     hit_step_limit: bool = False
     error: Optional[str] = None
     raw_responses: List[Dict[str, Any]] = field(default_factory=list)  # the model's message at each step, verbatim
+
+
+# Registry-style records for an eval roster. Roster order stands in for creation order, and
+# later agents count as more recently used, so the hot cache is the end of the list.
+def roster_records(roster: Sequence[str], summaries: Mapping[str, str]) -> List[AgentRecord]:
+    records = []
+    for index, name in enumerate(roster, start=1):
+        used = (_ROSTER_EPOCH + timedelta(minutes=index)).isoformat().replace("+00:00", "Z")
+        records.append(AgentRecord(id=f"a{index}", name=name, summary=summaries.get(name, ""), status="active",
+                                   created_at=used, last_used_at=used, run_count=1))
+    return records
 
 
 # Render (tag, text) history entries exactly as ConversationLog.load_transcript does
@@ -56,15 +72,20 @@ async def run_decision(
     model: str,
     api_key: Optional[str],
     max_steps: int = 5,
+    summaries: Optional[Mapping[str, str]] = None,
 ) -> Decision:
     decision = Decision()
     system = build_system_prompt()
     tools = get_tool_schemas()
     names_by_id = {f"a{i}": name for i, name in enumerate(roster, start=1)}
-    records = [AgentRecord(id=agent_id, name=name, summary="", status="active", created_at="",
-                           last_used_at="", run_count=0) for agent_id, name in names_by_id.items()]
+    records = roster_records(roster, summaries or {})
+    facts: Dict[str, Dict[str, List[str]]] = {}
+    history = render_history(case.history)
+    # The same working set the app would build: recent agents plus the best matches, with cards.
+    working = select_working_set(routing_query(case.message, history), records, facts)
+    decision.agents_shown = len(working.agents)
     messages: List[Dict[str, Any]] = prepare_message_with_history(
-        case.message, render_history(case.history), message_type="user", agents=list(names_by_id.items())
+        case.message, history, message_type="user", working_set=working, facts_by_id=facts
     )
 
     for _ in range(max_steps):
@@ -83,7 +104,8 @@ async def run_decision(
         decision.raw_responses.append(message)
         tool_calls = message.get("tool_calls") or []
 
-        outcomes = [_simulate_tool(name, args, names_by_id, records, decision) for name, args in _parse_calls(tool_calls)]
+        outcomes = [_simulate_tool(name, args, names_by_id, records, facts, decision)
+                    for name, args in _parse_calls(tool_calls)]
         routes = [route for _, route in outcomes if route]
         if routes:
             decision.routes = routes
@@ -107,10 +129,14 @@ def _simulate_tool(
     args: Optional[Dict[str, Any]],
     names_by_id: Dict[str, str],
     records: Sequence[AgentRecord],
+    facts: Dict[str, Dict[str, List[str]]],
     decision: Decision,
 ) -> Tuple[Dict[str, Any], Optional[str]]:
     if args is None:
         return {"error": "invalid json"}, None
+    if name == "search_agents":
+        decision.searches += 1
+        return agent_search_results(str(args.get("query") or ""), list(records), facts), None
     if name == "send_message_to_agent":
         agent_id = str(args.get("agent_id") or "").strip().lower()
         if agent_id in names_by_id:

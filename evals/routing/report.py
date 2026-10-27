@@ -39,7 +39,8 @@ def write_report(out_dir: Path) -> Path:
         + (" (two duplicate decoy agents per case; see `evals/routing/data/decoys.json`)" if identity.get("variant") == "messy" else ""),
         f"- **Code:** `{meta.get('git_commit', 'unknown')[:10]}`{' (uncommitted changes)' if meta.get('git_dirty') else ''}",
         f"- **Decisions:** {len(results)} · **total cost:** ${sum(r.cost for r in results):.4f} · "
-        f"**duplicate warnings shown:** {sum(r.get('duplicate_warnings', 0) for r in records)}",
+        f"**duplicate warnings shown:** {sum(r.get('duplicate_warnings', 0) for r in records)} · "
+        f"**agent searches:** {sum(r.get('searches', 0) for r in records)}",
         "",
         "## Accuracy by roster size",
         "",

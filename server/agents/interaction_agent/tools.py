@@ -9,6 +9,7 @@ from ...logging_config import logger
 from ...services.conversation import get_conversation_log
 from ...services.execution import AgentRecord, get_agent_registry, get_execution_agent_logs
 from ...services.execution.matching import DuplicateCandidate, find_possible_duplicates
+from ...services.execution.search import search_agents as rank_agents
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -61,6 +62,21 @@ TOOL_SCHEMAS = [
                     },
                 },
                 "required": ["name", "instructions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_agents",
+            "description": "Search all existing execution agents, including ones not shown in <active_agents>, by topic, person, or id. Returns the best matches with their cards. Use it before create_agent when an older agent might already cover the task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Who or what to look for (e.g., 'landlord lease renewal')."},
+                },
+                "required": ["query"],
                 "additionalProperties": False,
             },
         },
@@ -163,6 +179,35 @@ def create_agent(name: str, instructions: str, confirm_new: bool = False) -> Too
     agent = registry.create(name, summary=instructions[:_INITIAL_SUMMARY_CHARS])
     logger.info(f"Created agent {agent.id} ({agent.name})")
     return _dispatch(agent, instructions, new_agent_created=True)
+
+
+# Look up agents beyond the ones shown in the prompt
+def search_agents(query: str) -> ToolResult:
+    """Search every execution agent by topic, person, or id."""
+    registry = get_agent_registry()
+    return ToolResult(success=True, payload=agent_search_results(query, registry.list_agents(), registry.all_facts()))
+
+
+# What search_agents tells the model (shared with the routing eval)
+def agent_search_results(query: str, agents: List[AgentRecord], facts_by_id: Dict[str, Any]) -> Dict[str, Any]:
+    matches = rank_agents(query, agents, facts_by_id)
+    if not matches:
+        return {"agents": [], "total_agents": len(agents),
+                "note": "No matching agents. If this is a new task, use create_agent."}
+    return {
+        "agents": [
+            {
+                "agent_id": m.agent.id,
+                "name": m.agent.name,
+                "summary": m.agent.summary,
+                "last_used": m.agent.last_used_at,
+                "open_drafts": facts_by_id.get(m.agent.id, {}).get("draft", []),
+                "live_reminders": facts_by_id.get(m.agent.id, {}).get("trigger", []),
+            }
+            for m in matches
+        ],
+        "total_agents": len(agents),
+    }
 
 
 # What create_agent tells the model instead of creating a likely duplicate (shared with the routing eval)
@@ -293,6 +338,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_message_to_agent(**args)
         if name == "create_agent":
             return create_agent(**args)
+        if name == "search_agents":
+            return search_agents(**args)
         if name == "send_message_to_user":
             return send_message_to_user(**args)
         if name == "send_draft":
