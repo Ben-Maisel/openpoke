@@ -33,6 +33,8 @@ class RoutingCase:
     are what the history refers to); distractors are added around them.
     `history` is a sequence of (tag, text) conversation entries, oldest first,
     using the conversation log's tags: user_message, poke_reply, agent_message.
+    `exclude` lists terms no distractor may contain, so padding a roster never
+    adds an agent that would also be a reasonable answer.
     """
 
     id: str
@@ -41,3 +43,4 @@ class RoutingCase:
     expect: Expectation
     required_agents: Tuple[str, ...] = ()
     history: Tuple[Tuple[str, str], ...] = field(default_factory=tuple)
+    exclude: Tuple[str, ...] = ()

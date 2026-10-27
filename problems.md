@@ -203,7 +203,11 @@ Each step builds on the previous ones. Related problems that touch the same code
       - `prepare_message_with_history` gained an optional `agents` argument so the eval can supply a roster. With no argument, behavior is unchanged.
       - The evaluator is itself tested in CI: `tests/test_routing_eval.py`, 32 tests, including a contract test that the history format matches the real conversation log.
       - Live check: 3 cases, all correct, $0.002.
-    - [ ] 5b: dataset (world, ~40 labelled cases, seeded distractor rosters)
+    - [x] **5b: dataset.**
+      - `evals/routing/data/world.json`: one fictional user's world, with deliberate name clashes and naming templates modelled on the app's own examples. It generates 949 distractor names.
+      - `evals/routing/data/cases.json`: 40 hand-labelled cases, split 10 explicit, 8 implicit (needs history), 6 disambiguation, 10 new task, 6 no delegation.
+      - `evals/routing/dataset.py`: builds seeded rosters. They're nested (only noise grows), the correct agent sits at a random but stable position, and each case's `exclude` terms keep competing answers out of the padding.
+      - `tests/test_routing_dataset.py`, 133 checks: label consistency, roster fairness at every size, nesting, reproducibility, and position spread.
     - [ ] 5c: runner, report, and the baseline run
 - **Solution:** —
 
