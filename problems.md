@@ -58,7 +58,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
 | P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🟢 Solved |
 | P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🟢 Solved |
-| P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🔴 Open |
+| P18 | No push to the browser: the UI re-downloads the full history every 1.5s | E | Low | 🟢 Solved |
 | P19 | All state is global, so only one user is supported | E | Low | 🔴 Open |
 | P20 | "Ask before sending email" is enforced only by the prompt, not by code | D | High | 🟢 Solved |
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🟢 Solved |
@@ -520,7 +520,28 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [web/app/page.tsx](web/app/page.tsx)
 - **What:** the browser fetches the **entire** conversation history every 1.5 seconds, and every 1 second while waiting for a reply. Payload size grows with the conversation. The LLM responses aren't streamed either.
 - **Planned:** publish an event whenever a message is written to the conversation log (one central write point), and push it to the browser over Server-Sent Events. Each event carries a sequence number so a reconnecting client resumes without gaps. Keep a slow poll only as a fallback. The same channel can carry "working…" and error events, which helps P12.
-- **Solution:** —
+- **Solution:** a push stream over Server-Sent Events.
+  - **Server** ([events.py](server/services/conversation/events.py), [stream.py](server/services/conversation/stream.py)):
+    - Every conversation-log entry has a sequence number (its position in the log).
+    - Each user-visible write, and each clear, is published to an in-process hub at the log's single write point.
+    - `GET /api/v1/chat/events` first replays what the client missed (`?after=N`, or the `Last-Event-ID` a reconnecting browser sends). It then streams live messages and a heartbeat every 15 seconds (`event_stream_heartbeat_seconds`).
+    - A message already in the replay is never sent twice. A client that missed a clear is told to start over.
+    - The stream also carries **working / idle**, counting interaction turns plus the agent runs you asked for (background trigger runs don't count). The typing indicator is therefore true, instead of being guessed from "is the last message from the assistant?" with a 30-second give-up.
+  - **Web** ([page.tsx](web/app/page.tsx), [events route](web/app/api/chat/events/route.ts)):
+    - `EventSource` replaces both polling loops; the Next.js route proxies the stream and forwards `Last-Event-ID`.
+    - Your optimistic message is replaced by the server's copy.
+    - The full history is fetched only if the stream is down (every 15 seconds), and a 2-minute safety timer stops the indicator from sticking if the stream is lost.
+  - **Verified:**
+    - 19 server tests cover:
+      - the event hub and working-state edges
+      - sequence numbers across restarts and clears
+      - publishing on write
+      - the stream's replay, live push, de-duplication, missed-clear recovery, heartbeat and disconnect
+      - working state from real turns, including failed turns and background versus requested runs
+      - the route's resume
+    - The web app type-checks and builds, and a **new CI job** now does that on every push.
+    - **End to end through the built web app:** I ran the real server and `next start`, opened the proxied stream, and sent a real message. The stream delivered idle → working → your message (seq 1) → the reply (seq 2) → idle. A reconnect with `Last-Event-ID: 1` replayed only seq 2, a clear was pushed live, and a reconnect after a missed clear started over.
+  - **Not verified by me:** clicking through the UI in a browser. That's a 2-minute manual check.
 
 ### P20: Email sending gated only by the prompt
 - **Where:** [server/agents/execution_agent/tools/gmail.py](server/agents/execution_agent/tools/gmail.py)

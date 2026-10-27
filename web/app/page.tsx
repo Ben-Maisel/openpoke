@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import SettingsModal, { useSettings } from '@/components/SettingsModal';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { ChatInput } from '@/components/chat/ChatInput';
@@ -9,7 +9,10 @@ import { ErrorBanner } from '@/components/chat/ErrorBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
 import type { ChatBubble } from '@/components/chat/types';
 
-const POLL_INTERVAL_MS = 1500;
+// New messages and the assistant's working state are pushed over Server-Sent Events (P18).
+// The full history is only fetched again if the stream is down, as a slow fallback.
+const FALLBACK_POLL_MS = 15000;
+const WAITING_SAFETY_MS = 120000; // never leave the typing indicator on forever if the stream is lost
 
 const formatEscapeCharacters = (text: string): string => {
   return text
@@ -24,17 +27,23 @@ const isRenderableMessage = (entry: any) =>
   typeof entry?.content === 'string' &&
   entry.content.trim().length > 0;
 
+// A message's sequence number (its place in the conversation log) is its stable id
+const toBubble = (message: any, fallbackIndex: number): ChatBubble => ({
+  id: typeof message.seq === 'number' ? `seq-${message.seq}` : `history-${fallbackIndex}`,
+  role: message.role,
+  text: formatEscapeCharacters(message.content),
+});
+
 const toBubbles = (payload: any): ChatBubble[] => {
   if (!Array.isArray(payload?.messages)) return [];
 
-  return payload.messages
-    .filter(isRenderableMessage)
-    .map((message: any, index: number) => ({
-      id: `history-${index}`,
-      role: message.role,
-      text: formatEscapeCharacters(message.content),
-    }));
+  return payload.messages.filter(isRenderableMessage).map(toBubble);
 };
+
+const lastSeqOf = (payload: any): number =>
+  Array.isArray(payload?.messages)
+    ? payload.messages.reduce((max: number, m: any) => (typeof m?.seq === 'number' && m.seq > max ? m.seq : max), 0)
+    : 0;
 
 export default function Page() {
   const { settings, setSettings } = useSettings();
@@ -50,21 +59,72 @@ export default function Page() {
   const openSettings = useCallback(() => setOpen(true), [setOpen]);
   const closeSettings = useCallback(() => setOpen(false), [setOpen]);
 
+  const lastSeqRef = useRef(0);
+  const sourceRef = useRef<EventSource | null>(null);
+
   const loadHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/chat/history', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       setMessages(toBubbles(data));
+      lastSeqRef.current = lastSeqOf(data);
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
       console.error('Failed to load chat history', err);
     }
   }, []);
 
+  // The live stream: it first replays the history, then pushes each new message as it is written.
+  // On reconnect the browser sends the last event id, so the server resumes without gaps.
   useEffect(() => {
-    void loadHistory();
+    const source = new EventSource('/api/chat/events');
+    sourceRef.current = source;
+
+    source.addEventListener('message', (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      if (!isRenderableMessage(data) || data.seq <= lastSeqRef.current) return;
+      lastSeqRef.current = data.seq;
+      const bubble = toBubble(data, data.seq);
+      setMessages(prev => {
+        // The server's copy of a message we showed optimistically replaces the optimistic one
+        const pending = bubble.role === 'user'
+          ? prev.findIndex(m => m.id.startsWith('pending-') && m.text === bubble.text)
+          : -1;
+        if (pending >= 0) return [...prev.slice(0, pending), ...prev.slice(pending + 1), bubble];
+        return [...prev, bubble];
+      });
+    });
+
+    source.addEventListener('status', (event) => {
+      const data = JSON.parse((event as MessageEvent).data);
+      setIsWaitingForResponse(Boolean(data.working));
+    });
+
+    source.addEventListener('cleared', () => {
+      lastSeqRef.current = 0;
+      setMessages([]);
+    });
+
+    return () => {
+      source.close();
+      sourceRef.current = null;
+    };
+  }, []);
+
+  // Fallback only: if the stream is down, refresh the history occasionally
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (sourceRef.current?.readyState !== EventSource.OPEN) void loadHistory();
+    }, FALLBACK_POLL_MS);
+    return () => window.clearInterval(intervalId);
   }, [loadHistory]);
+
+  useEffect(() => {
+    if (!isWaitingForResponse) return;
+    const timeoutId = window.setTimeout(() => setIsWaitingForResponse(false), WAITING_SAFETY_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [isWaitingForResponse]);
 
   // Detect and store browser timezone on first load
   useEffect(() => {
@@ -95,15 +155,6 @@ export default function Page() {
     void detectAndStoreTimezone();
   }, [settings, setSettings]);
 
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void loadHistory();
-    }, POLL_INTERVAL_MS);
-
-    return () => window.clearInterval(intervalId);
-  }, [loadHistory]);
-
   const canSubmit = input.trim().length > 0;
   const inputPlaceholder = 'Type a message…';
 
@@ -115,9 +166,9 @@ export default function Page() {
       setError(null);
       setIsWaitingForResponse(true);
 
-      // Optimistically add the user message immediately
+      // Optimistically add the user message immediately; the stream's copy replaces it when it arrives
       const userMessage: ChatBubble = {
-        id: `user-${Date.now()}`,
+        id: `pending-${Date.now()}`,
         role: 'user',
         text: formatEscapeCharacters(trimmed),
       };
@@ -146,51 +197,10 @@ export default function Page() {
         setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
         setIsWaitingForResponse(false);
         throw err instanceof Error ? err : new Error('Failed to send message');
-      } finally {
-        // Poll until we get the assistant's response
-        let pollAttempts = 0;
-        const maxPollAttempts = 30; // Max 30 attempts (30 seconds)
-        
-        const pollForAssistantResponse = async () => {
-          pollAttempts++;
-          
-          try {
-            const res = await fetch('/api/chat/history', { cache: 'no-store' });
-            if (res.ok) {
-              const data = await res.json();
-              const currentMessages = toBubbles(data);
-              
-              // Check if the last message is from assistant and contains our user message
-              const lastMessage = currentMessages[currentMessages.length - 1];
-              const hasUserMessage = currentMessages.some(msg => msg.text === trimmed && msg.role === 'user');
-              const hasAssistantResponse = lastMessage?.role === 'assistant' && hasUserMessage;
-              
-              if (hasAssistantResponse) {
-                // We got the assistant response, update messages and stop loading
-                setMessages(currentMessages);
-                setIsWaitingForResponse(false);
-                return;
-              }
-            }
-          } catch (err) {
-            console.error('Error polling for response:', err);
-          }
-          
-          // Continue polling if we haven't exceeded max attempts
-          if (pollAttempts < maxPollAttempts) {
-            setTimeout(pollForAssistantResponse, 1000); // Poll every second
-          } else {
-            // Timeout - stop loading and update messages anyway
-            setIsWaitingForResponse(false);
-            await loadHistory();
-          }
-        };
-        
-        // Start polling after a brief delay
-        setTimeout(pollForAssistantResponse, 1000);
       }
+      // No polling: the reply, and the end of the assistant's work, arrive over the event stream
     },
-    [loadHistory],
+    [],
   );
 
   const handleClearHistory = useCallback(async () => {
@@ -200,6 +210,7 @@ export default function Page() {
         console.error('Failed to clear chat history', res.statusText);
         return;
       }
+      lastSeqRef.current = 0;
       setMessages([]);
     } catch (err) {
       console.error('Failed to clear chat history', err);
