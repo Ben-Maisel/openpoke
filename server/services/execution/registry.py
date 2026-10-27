@@ -190,6 +190,15 @@ class AgentRegistry:
             grouped[row["kind"]].append(row["value"])
         return grouped
 
+    def all_facts(self) -> Dict[str, Dict[str, List[str]]]:
+        """Facts for every agent in one query (agent id -> kind -> values); agents without facts are omitted."""
+        with self._lock, closing(self._connect()) as conn:
+            rows = conn.execute("SELECT seq, kind, value FROM agent_facts ORDER BY seq, kind, value").fetchall()
+        grouped: Dict[str, Dict[str, List[str]]] = {}
+        for row in rows:
+            grouped.setdefault(f"a{row['seq']}", {kind: [] for kind in FACT_KINDS})[row["kind"]].append(row["value"])
+        return grouped
+
     # --- Helpers --------------------------------------------------------------
 
     def _update(self, agent_id: str, assignments: str, params: tuple) -> bool:

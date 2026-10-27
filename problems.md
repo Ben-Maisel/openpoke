@@ -42,7 +42,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | ID | Problem | Area | Severity | Status |
 |---|---|---|---|---|
 | P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
-| P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🔴 Open |
+| P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟡 In progress |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
@@ -127,6 +127,15 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/agents/interaction_agent/agent.py:45](server/agents/interaction_agent/agent.py#L45)
 - **What:** every agent ever created is listed in every interaction-agent call. The original author flags this as the main known limitation.
 - **Why it matters:** token cost and latency grow with every agent. Routing accuracy drops as the model picks from hundreds of similar names.
+- **Measured (P13 baseline):** accuracy held on clean rosters, but prompts grow about 19 tokens per agent forever (5.1k → 14.4k at 500 agents). With look-alike duplicates, names alone can't identify the agent holding the context.
+- **Progress:**
+  - [x] **P2a: search and working set.** `server/services/execution/search.py`.
+    - **`search_agents`:** ranks agents by the request's meaningful words found in each agent's name (weight 3), card facts (people, email addresses, IDs; weight 2) and card summary (weight 1). Each word is weighted by how rare it is across agents (IDF), and a quoted agent ID wins outright.
+    - **`select_working_set`:** returns the hot cache (5 most recently used) plus the top 5 matches not already shown, so at most 10 agents are listed whatever the roster size.
+    - **`AgentRegistry.all_facts()`:** loads every agent's facts in one query.
+    - **Tests:** `tests/test_agent_search.py`, 17 tests, including the card telling look-alikes apart and a 500-agent roster yielding a 10-agent working set. Not yet used by the app.
+  - [ ] P2b: show the working set with cards in the prompt, and add the `search_agents` tool
+  - [ ] P2c: give eval roster agents realistic cards, then rerun both evals
 - **Solution:** —
 
 ### P3: Agents are never retired
