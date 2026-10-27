@@ -19,7 +19,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 
 1. **P8:** Windows crash (nothing runs without this)
 2. **P13:** test harness, plus a *baseline* eval of today's routing, so every later fix has a before/after number
-   - **P21**, **P22**, **P23:** trigger bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
+   - **P21**, **P22**, **P23**, **P24:** bugs found by the P13 tests, fixed as a short batch once the P13 pieces are done
 3. **P1:** agent registry with stable IDs and agent cards (foundation for all of area A)
 4. **P4** + **P14:** ID-based routing and an explicit "create agent" action; rewrite the prompts that refer to it
 5. **P2:** shortlist of relevant agents instead of the full roster
@@ -63,6 +63,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P21 | Recurring reminders drift an hour after DST in zero-offset zones (UK, Ireland, Portugal) | D | Medium | 🔴 Open |
 | P22 | Unknown reminder statuses (e.g. "cancelled") silently become "active" | D | Medium | 🔴 Open |
 | P23 | A recurring reminder's failure error is erased right after being recorded | D | Low | 🔴 Open |
+| P24 | Logs corrupt any text containing a literal backslash-n (e.g. `C:\new`) | D | Medium | 🔴 Open |
 
 ---
 
@@ -166,7 +167,7 @@ Each step builds on the previous ones. Related problems that touch the same code
   - [x] **CI workflow.** `.github/workflows/tests.yml` runs pytest on every push and pull request across Ubuntu and Windows × Python 3.10 and 3.12 (4 jobs). Real-LLM evals are excluded from CI.
   - Unit tests:
     - [x] **Triggers.** `tests/test_trigger_{utils,service,scheduler}.py`, 62 tests, using a real temporary SQLite file, a frozen clock, and a fake execution agent. These found P21–P23, which are tracked as strict expected failures.
-    - [ ] Logs and memory
+    - [x] **Logs and memory.** `tests/test_conversation_log.py`, `tests/test_summarizer.py` and `tests/test_execution_log_store.py`, 42 tests, with the summarizer LLM faked. These found P24 and confirmed P4's shared-memory collision; both are tracked as strict expected failures.
     - [ ] Email processing
     - [ ] Timezones and small stores
   - [ ] Fake LLM and fake Gmail fixtures, plus component tests
@@ -222,6 +223,15 @@ Each step builds on the previous ones. Related problems that touch the same code
 - **Where:** [server/services/trigger_scheduler.py](server/services/trigger_scheduler.py) (`_handle_failure`)
 - **What:** on failure, the scheduler records `last_error` and then calls `schedule_next_occurrence`, which always clears `last_error`. A recurring reminder can fail on every run and leave no trace.
 - **Found by:** `test_failed_recurring_trigger_keeps_error_and_is_rescheduled` (expected failure until fixed).
+- **Solution:** —
+
+### P24: Logs corrupt literal backslash-n
+- **Where:** `_encode_payload` / `_decode_payload`, copy-pasted three times:
+  - [server/services/conversation/log.py](server/services/conversation/log.py)
+  - [server/services/conversation/summarization/working_memory_log.py](server/services/conversation/summarization/working_memory_log.py)
+  - [server/services/execution/log_store.py](server/services/execution/log_store.py)
+- **What:** each entry is stored on one line by replacing real newlines with the two characters `\n`. Existing backslashes aren't escaped first, so on read-back *any* literal `\n` in the original text becomes a newline. For example, `C:\new\notes.txt` becomes `C:` + newline + `ew` + newline + `otes.txt`. This silently alters Windows paths, code, and regexes in user messages, emails, and agent memory.
+- **Found by:** `test_literal_backslash_n_round_trips` in `tests/test_conversation_log.py` and `tests/test_execution_log_store.py` (expected failures until fixed).
 - **Solution:** —
 
 ### P19: Single-user global state
