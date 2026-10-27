@@ -21,10 +21,7 @@ When searching for personal information about the user, it's probably smart to l
 
 
 Agent Name: {agent_name}
-Purpose: {agent_purpose}
-
-# Instructions
-[TO BE FILLED IN BY USER - Add your specific instructions here]
+Your card (what you handle and where things stand): {agent_purpose}
 
 # Available Tools
 You have access to the following Gmail tools:

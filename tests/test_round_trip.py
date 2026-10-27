@@ -5,6 +5,7 @@ only the model and Gmail are faked.
 """
 
 import asyncio
+import re
 
 import pytest
 
@@ -27,8 +28,12 @@ def agent_turn(call):
     return is_interaction_agent(call) and "<new_agent_message>" in call.prompt
 
 
-def delegate(agent, instructions):
-    return calls(("send_message_to_agent", {"agent_name": agent, "instructions": instructions}))
+def create(name, instructions):
+    return calls(("create_agent", {"name": name, "instructions": instructions}))
+
+
+def send(agent_id, instructions):
+    return calls(("send_message_to_agent", {"agent_id": agent_id, "instructions": instructions}))
 
 
 def chat():
@@ -39,12 +44,16 @@ def agent_reports():
     return [p for tag, _, p in get_conversation_log().iter_entries() if tag == "agent_message"]
 
 
+def without_ids(report):
+    """Reports name each agent with its id, e.g. "[SUCCESS] Alice (a7): ..."; ids differ per test run."""
+    return re.sub(r" \(a\d+\):", ":", report)
+
+
 # --- The headline flow ------------------------------------------------------
 
 async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmail):
     fake_llm.script(
-        calls(("send_message_to_user", {"message": "on it"})), delegate(AGENT, "Draft a lunch invite to alice@example.com"), reply(""),
-        delegate(AGENT, "User approved. Send draft r-1."), reply(""),
+        calls(("send_message_to_user", {"message": "on it"})), create(AGENT, "Draft a lunch invite to alice@example.com"), reply(""),
         when=user_turn,
     )
     fake_llm.script(
@@ -63,6 +72,10 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
     await wait_until(lambda: ("assistant", "want me to send it?") in chat())
     assert fake_gmail.sent == []  # nothing leaves before the user approves
 
+    # The report carried the agent's id into the history, so the model can route "send it" straight back.
+    (agent,) = get_agent_registry().list_agents()
+    assert f"{AGENT} ({agent.id})" in agent_reports()[0]
+    fake_llm.script(send(agent.id, "User approved. Send draft r-1."), reply(""), when=user_turn)
     await InteractionAgentRuntime().execute("send it")
     await wait_until(lambda: ("assistant", "sent!") in chat())
 
@@ -80,14 +93,15 @@ async def test_draft_confirm_and_send_through_the_same_agent(fake_llm, fake_gmai
     # The second run of the agent remembered the first: that is what made "send it" work.
     second_run_prompt = fake_llm.calls_to(is_agent(AGENT))[2].system
     assert "Draft r-1 created" in second_run_prompt
-    assert agent_reports() == [f"[SUCCESS] {AGENT}: Draft r-1 created for alice@example.com", f"[SUCCESS] {AGENT}: Sent draft r-1"]
+    assert [without_ids(r) for r in agent_reports()] == [
+        f"[SUCCESS] {AGENT}: Draft r-1 created for alice@example.com", f"[SUCCESS] {AGENT}: Sent draft r-1"]
 
 
 # --- Batching ---------------------------------------------------------------
 
 async def test_agents_dispatched_together_report_back_in_one_message(fake_llm, fake_gmail):
-    fake_llm.script(calls(("send_message_to_agent", {"agent_name": "Alice", "instructions": "a"}),
-                          ("send_message_to_agent", {"agent_name": "Bob", "instructions": "b"})), reply(""), when=user_turn)
+    fake_llm.script(calls(("create_agent", {"name": "Alice", "instructions": "a"}),
+                          ("create_agent", {"name": "Bob", "instructions": "b"})), reply(""), when=user_turn)
     fake_llm.script(reply("Alice done"), when=is_agent("Alice"))
     fake_llm.script(reply("Bob done"), when=is_agent("Bob"))
     fake_llm.script(calls(("send_message_to_user", {"message": "both done"})), reply(""), when=agent_turn)
@@ -96,12 +110,12 @@ async def test_agents_dispatched_together_report_back_in_one_message(fake_llm, f
     await wait_until(lambda: ("assistant", "both done") in chat())
 
     (report,) = agent_reports()
-    assert sorted(report.splitlines()) == ["[SUCCESS] Alice: Alice done", "[SUCCESS] Bob: Bob done"]
+    assert sorted(without_ids(line) for line in report.splitlines()) == ["[SUCCESS] Alice: Alice done", "[SUCCESS] Bob: Bob done"]
 
 
 async def test_one_failing_agent_does_not_block_the_others(fake_llm, fake_gmail):
-    fake_llm.script(calls(("send_message_to_agent", {"agent_name": "Alice", "instructions": "a"}),
-                          ("send_message_to_agent", {"agent_name": "Bob", "instructions": "b"})), reply(""), when=user_turn)
+    fake_llm.script(calls(("create_agent", {"name": "Alice", "instructions": "a"}),
+                          ("create_agent", {"name": "Bob", "instructions": "b"})), reply(""), when=user_turn)
     fake_llm.script(OpenRouterError("500 boom"), when=is_agent("Alice"))
     fake_llm.script(reply("Bob done"), when=is_agent("Bob"))
     fake_llm.script(reply(""), when=agent_turn)
@@ -109,20 +123,20 @@ async def test_one_failing_agent_does_not_block_the_others(fake_llm, fake_gmail)
     await InteractionAgentRuntime().execute("invite alice and bob")
     await wait_until(lambda: len(agent_reports()) == 1)
 
-    lines = sorted(agent_reports()[0].splitlines())
+    lines = sorted(without_ids(line) for line in agent_reports()[0].splitlines())
     assert lines == ["[FAILED] Alice: Failed to complete task: 500 boom", "[SUCCESS] Bob: Bob done"]
 
 
 async def test_stuck_agent_times_out_with_a_clear_failure(fake_llm, fake_gmail, batch_manager):
     batch_manager.timeout_seconds = 0.05
     stuck = Gated(reply("never arrives"))
-    fake_llm.script(delegate("Alice", "a"), reply(""), when=user_turn)
+    fake_llm.script(create("Alice", "a"), reply(""), when=user_turn)
     fake_llm.script(stuck, when=is_agent("Alice"))
     fake_llm.script(reply(""), when=agent_turn)
 
     await InteractionAgentRuntime().execute("invite alice")
     await wait_until(lambda: len(agent_reports()) == 1)
-    assert agent_reports() == ["[FAILED] Alice: Execution timed out after 0.05 seconds"]
+    assert [without_ids(r) for r in agent_reports()] == ["[FAILED] Alice: Execution timed out after 0.05 seconds"]
     stuck.release()
 
 
@@ -131,7 +145,7 @@ async def test_stuck_agent_times_out_with_a_clear_failure(fake_llm, fake_gmail, 
 @pytest.mark.xfail(strict=True, reason="P9: one global batch holds a fast result until an unrelated slow task finishes")
 async def test_fast_result_is_not_held_back_by_an_unrelated_slow_task(fake_llm, fake_gmail, batch_manager):
     slow = Gated(reply("Slow research done"))
-    fake_llm.script(delegate("Research", "dig deep"), reply(""), delegate("Quick", "quick one"), reply(""), when=user_turn)
+    fake_llm.script(create("Research", "dig deep"), reply(""), create("Quick", "quick one"), reply(""), when=user_turn)
     fake_llm.script(slow, when=is_agent("Research"))
     fake_llm.script(reply("Fast answer"), when=is_agent("Quick"))
     fake_llm.script(reply(""), reply(""), when=agent_turn)
@@ -152,9 +166,10 @@ async def test_second_message_to_a_busy_agent_sees_the_first_runs_result(fake_ll
     fake_llm.script(first, reply("Sent r-1"), when=is_agent(AGENT))
     fake_llm.script(reply(""), reply(""), when=agent_turn)
 
-    run_1 = asyncio.create_task(batch_manager.execute_agent(AGENT, "Draft the invite"))
+    agent = get_agent_registry().create(AGENT)
+    run_1 = asyncio.create_task(batch_manager.execute_agent(agent.id, "Draft the invite"))
     await wait_until(first.reached.is_set)
-    run_2 = asyncio.create_task(batch_manager.execute_agent(AGENT, "Send it"))
+    run_2 = asyncio.create_task(batch_manager.execute_agent(agent.id, "Send it"))
     await asyncio.sleep(0.05)  # if runs were serialised, run 2 would still be waiting here
     first.release()
     await asyncio.wait_for(asyncio.gather(run_1, run_2), timeout=2)

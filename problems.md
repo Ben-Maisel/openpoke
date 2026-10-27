@@ -54,7 +54,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | P11 | Interaction-agent turns from four sources run concurrently and race | D | Medium | 🔴 Open |
 | P12 | Failures are silent; the user gets no reply | D | Medium | 🔴 Open |
 | P13 | No tests or evaluations exist | E | High | 🟢 Solved |
-| P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🔴 Open |
+| P14 | Execution prompt has an unfilled placeholder; agent "purpose" is just its name | E | Low | 🟢 Solved |
 | P15 | Claude Sonnet 4 is used for every call, including simple classification | E | Low | 🔴 Open |
 | P16 | Drafts aren't rendered as drafts, and "verbatim" relies on the LLM retyping them | E | Low | 🔴 Open |
 | P17 | Gmail and search actions are logged under fixed names, not the calling agent | E | Low | 🔴 Open |
@@ -150,6 +150,14 @@ Each step builds on the previous ones. Related problems that touch the same code
   - **Coverage:** it catches 42 of the 48 messy-eval decoys.
   - **Known trade-off:** look-alikes differing in one word (Alice Chen vs Alice Wong, Vercel vs Stripe job offer) are flagged too. That's acceptable because the check warns and the model decides.
   - **Tests:** `tests/test_agent_matching.py`, 15 tests.
+- **P4b, routing by ID:**
+  - **Two tools:** `send_message_to_agent(agent_id, instructions)` returns an error for an unknown ID (with the 3 most recently used agents as hints) and never creates anything. `create_agent(name, instructions, confirm_new?)` runs the duplicate check first; on a likely match it returns `possible_duplicate` with the similar agents' IDs, names and card summaries instead of creating.
+  - **IDs everywhere:** the prompt lists `<agent id="a17" name="…" />`, and reports read `[SUCCESS] Lunch with Alice Wong (a17): …`, so IDs flow into the conversation history.
+  - **P14 prompt cleanup:** the interaction system prompt explains IDs, `create_agent` and the duplicate reply. The execution prompt's `[TO BE FILLED IN BY USER]` placeholder is gone, and its purpose line is now the agent's card summary.
+  - **Eval harness:** it uses the same tools and the same duplicate check and warning text, and counts warnings shown.
+  - **Verified:**
+    - 646 tests pass, with new tests for create, send-by-ID, unknown IDs, duplicate hold-back, `confirm_new`, and genuinely new tasks
+    - live on Haiku: "remind me to call mom…" → `create_agent` (a1); "make the mom call reminder 7pm" → `send_message_to_agent("a1")`, one agent and two runs
 - **Progress:** the *shared memory* half is fixed by P1b. Memory is keyed by agent ID, so two agents can never share a file, whatever their names (`test_agents_whose_names_collide_never_share_memory`). The *duplicate creation* half (a near-miss name silently creates a new agent) remains, for ID-based routing and the duplicate check.
 - **Solution:** —
 
@@ -290,7 +298,9 @@ Each step builds on the previous ones. Related problems that touch the same code
 ### P14: Placeholder prompt
 - **Where:** [server/agents/execution_agent/system_prompt.md:27](server/agents/execution_agent/system_prompt.md#L27)
 - **What:** the execution agent prompt still contains `[TO BE FILLED IN BY USER]`, and each agent's "purpose" is generated as "Handle tasks related to: {name}".
-- **Solution:** —
+- **Solution (with P4b):**
+  - **Execution prompt:** the placeholder section is removed, and the purpose line is now the agent's card summary ("Your card (what you handle and where things stand): …"), falling back to the old name-based line only for an agent with no summary.
+  - **Interaction prompt:** rewritten for ID routing and `create_agent`.
 
 ### P15: One expensive model for everything
 - **Where:** [server/config.py:54](server/config.py#L54)

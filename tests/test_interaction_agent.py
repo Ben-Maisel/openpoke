@@ -1,6 +1,7 @@
 """Component tests for the interaction agent loop, driven by a scripted fake LLM."""
 
 import asyncio
+import json
 import time
 
 import pytest
@@ -92,14 +93,14 @@ async def test_multiple_tool_calls_in_one_turn_all_run_in_order(fake_llm):
 
 async def test_prompt_contains_history_roster_and_new_message(fake_llm):
     fake_llm.for_interaction(reply("first answer"), reply("second answer"))
-    get_agent_registry().create("Lunch with Alice")
+    agent = get_agent_registry().create("Lunch with Alice")
 
     await InteractionAgentRuntime().execute("first question")
     await InteractionAgentRuntime().execute("second question")
 
     prompt = fake_llm.calls[1].prompt
     assert "<conversation_history>" in prompt and "first question" in prompt and "first answer" in prompt
-    assert '<agent name="Lunch with Alice" />' in prompt
+    assert f'<agent id="{agent.id}" name="Lunch with Alice" />' in prompt
     assert prompt.rstrip().endswith("<new_user_message>\nsecond question\n</new_user_message>")
     # The new message must not also appear in the history block.
     history = prompt.split("</conversation_history>")[0]
@@ -112,14 +113,14 @@ async def test_prompt_lists_every_roster_agent(fake_llm):
     for i in range(50):
         get_agent_registry().create(f"Agent {i}")
     await InteractionAgentRuntime().execute("hi")
-    assert fake_llm.calls[0].prompt.count("<agent name=") == 50
+    assert fake_llm.calls[0].prompt.count("<agent id=") == 50
 
 
 async def test_agent_names_are_escaped_in_the_prompt(fake_llm):
     fake_llm.for_interaction(reply("ok"))
-    get_agent_registry().create('Bob "the <builder>"')
+    agent = get_agent_registry().create('Bob "the <builder>"')
     await InteractionAgentRuntime().execute("hi")
-    assert '<agent name="Bob &quot;the &lt;builder&gt;&quot;" />' in fake_llm.calls[0].prompt
+    assert f'<agent id="{agent.id}" name="Bob &quot;the &lt;builder&gt;&quot;" />' in fake_llm.calls[0].prompt
 
 
 async def test_agent_reports_arrive_as_agent_messages(fake_llm):
@@ -132,33 +133,78 @@ async def test_agent_reports_arrive_as_agent_messages(fake_llm):
 
 # --- Delegating to execution agents ---------------------------------------
 
-async def test_delegating_creates_agent_logs_request_and_dispatches(fake_llm, dispatcher):
-    fake_llm.for_interaction(
-        calls(("send_message_to_agent", {"agent_name": "Lunch with Alice", "instructions": "Draft an invite"})),
-        reply(""),
-    )
+def create(name, instructions, **extra):
+    return calls(("create_agent", {"name": name, "instructions": instructions, **extra}))
+
+
+def send(agent_id, instructions):
+    return calls(("send_message_to_agent", {"agent_id": agent_id, "instructions": instructions}))
+
+
+async def test_creating_registers_the_agent_logs_the_request_and_dispatches_by_id(fake_llm, dispatcher):
+    fake_llm.for_interaction(create("Lunch with Alice", "Draft an invite"), reply(""))
     await InteractionAgentRuntime().execute("invite alice to lunch")
     await asyncio.sleep(0)  # let the background dispatch run
 
     (agent,) = get_agent_registry().list_agents()
     assert agent.name == "Lunch with Alice"
     assert agent.summary == "Draft an invite"  # the card starts as the creating instructions
-    # Memory and dispatch use the stable ID, not the name.
     assert [p for _, _, p in get_execution_agent_logs().iter_entries(agent.id)] == ["Draft an invite"]
     assert dispatcher.dispatched == [(agent.id, "Draft an invite")]
-    assert '"new_agent_created": true' in tool_results(fake_llm.calls[1])[0]
+    result = json.loads(tool_results(fake_llm.calls[1])[0])["result"]
+    assert (result["agent_id"], result["new_agent_created"]) == (agent.id, True)
 
 
-async def test_same_name_reuses_the_existing_agent(fake_llm, dispatcher):
-    fake_llm.for_interaction(
-        calls(("send_message_to_agent", {"agent_name": "Lunch with Alice", "instructions": "Draft"})), reply(""),
-        calls(("send_message_to_agent", {"agent_name": "Lunch with Alice", "instructions": "Send it"})), reply(""),
-    )
-    await InteractionAgentRuntime().execute("invite alice")
+async def test_sending_by_id_reuses_the_existing_agent(fake_llm, dispatcher):
+    agent = get_agent_registry().create("Lunch with Alice")
+    fake_llm.for_interaction(send(agent.id, "Send it"), reply(""))
     await InteractionAgentRuntime().execute("send it")
+    await asyncio.sleep(0)
     assert agent_names() == ["Lunch with Alice"]
-    assert '"new_agent_created": false' in tool_results(fake_llm.calls[3])[0]
-    assert dispatcher.dispatched[0][0] == dispatcher.dispatched[1][0]  # same agent ID both times
+    assert dispatcher.dispatched == [(agent.id, "Send it")]
+
+
+async def test_unknown_id_is_an_error_and_creates_nothing(fake_llm, dispatcher):
+    agent = get_agent_registry().create("Lunch with Alice")
+    fake_llm.for_interaction(send("a99999", "Send it"), send(agent.id, "Send it"), reply(""))
+    await InteractionAgentRuntime().execute("send it")
+    await asyncio.sleep(0)
+
+    feedback = json.loads(tool_results(fake_llm.calls[1])[0])
+    assert feedback["status"] == "error" and "No agent with id 'a99999'" in feedback["error"]["error"]
+    assert feedback["error"]["recently_used_agents"] == [{"agent_id": agent.id, "name": "Lunch with Alice"}]
+    assert agent_names() == ["Lunch with Alice"]  # nothing new was created
+    assert dispatcher.dispatched == [(agent.id, "Send it")]  # the model corrected itself
+
+
+async def test_likely_duplicate_is_held_back_with_the_matching_agent(fake_llm, dispatcher):
+    existing = get_agent_registry().create("Lunch with Alice Wong", summary="Invite sent, awaiting reply")
+    fake_llm.for_interaction(create("Alice Wong Lunch", "Did she reply?"), send(existing.id, "Did she reply?"), reply(""))
+    await InteractionAgentRuntime().execute("did alice wong reply about lunch?")
+    await asyncio.sleep(0)
+
+    warning = json.loads(tool_results(fake_llm.calls[1])[0])["result"]
+    assert (warning["status"], warning["created"]) == ("possible_duplicate", False)
+    assert warning["similar_agents"] == [{"agent_id": existing.id, "name": "Lunch with Alice Wong",
+                                          "summary": "Invite sent, awaiting reply"}]
+    assert agent_names() == ["Lunch with Alice Wong"]
+    assert dispatcher.dispatched == [(existing.id, "Did she reply?")]
+
+
+async def test_confirm_new_creates_despite_a_lookalike(fake_llm, dispatcher):
+    get_agent_registry().create("Lunch with Alice Chen")
+    fake_llm.for_interaction(create("Lunch with Alice Wong", "Invite Alice Wong", confirm_new=True), reply(""))
+    await InteractionAgentRuntime().execute("invite alice wong to lunch too")
+    await asyncio.sleep(0)
+    assert sorted(agent_names()) == ["Lunch with Alice Chen", "Lunch with Alice Wong"]
+
+
+async def test_genuinely_new_task_is_created_without_a_warning(fake_llm, dispatcher):
+    get_agent_registry().create("Lunch with Alice Wong")
+    fake_llm.for_interaction(create("Denver Flights", "Find flights"), reply(""))
+    await InteractionAgentRuntime().execute("find me flights to denver")
+    await asyncio.sleep(0)
+    assert sorted(agent_names()) == ["Denver Flights", "Lunch with Alice Wong"]
 
 
 # --- Bad output from the model --------------------------------------------

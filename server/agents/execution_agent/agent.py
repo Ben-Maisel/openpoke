@@ -37,6 +37,7 @@ class ExecutionAgent:
         self,
         agent_id: str,
         name: str,
+        summary: str = "",
         conversation_limit: Optional[int] = None
     ):
         """
@@ -45,17 +46,19 @@ class ExecutionAgent:
         Args:
             agent_id: Stable registry ID (e.g., 'a17'); memory is stored under it
             name: Human-readable agent name (e.g., 'conversation with keith')
+            summary: The agent's card summary (what it handles and where things stand)
             conversation_limit: Optional limit on past conversations to include (None = all)
         """
         self.agent_id = agent_id
         self.name = name
+        self.summary = summary
         self.conversation_limit = conversation_limit
         self._log_store = get_execution_agent_logs()
 
-    # Generate system prompt template with agent name and purpose derived from name
+    # Generate system prompt template with the agent's name and its card summary as its purpose
     def build_system_prompt(self) -> str:
         """Build the system prompt for this agent."""
-        agent_purpose = f"Handle tasks related to: {self.name}"
+        agent_purpose = self.summary or f"Handle tasks related to: {self.name}"
 
         return SYSTEM_PROMPT_TEMPLATE.format(
             agent_name=self.name,

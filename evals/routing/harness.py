@@ -8,10 +8,13 @@ from html import escape
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from server.agents.interaction_agent.agent import build_system_prompt, prepare_message_with_history
-from server.agents.interaction_agent.tools import get_tool_schemas
+from server.agents.interaction_agent.tools import duplicate_warning, get_tool_schemas
 from server.openrouter_client import request_chat_completion
+from server.services.execution.matching import find_possible_duplicates
+from server.services.execution.registry import AgentRecord
 
 from .cases import RoutingCase
+from .scoring import NEW_AGENT_PREFIX
 
 # Stand-in results for the interaction agent's non-routing tools, so the model
 # can keep going (e.g. it says "on it" to the user before delegating).
@@ -27,7 +30,8 @@ _HISTORY_TIMESTAMP = "2026-10-26 09:00:00"
 class Decision:
     """What the model did for one case."""
 
-    routes: List[str] = field(default_factory=list)  # agent names delegated to, in order
+    routes: List[str] = field(default_factory=list)  # agent names delegated to; created agents are "new:<name>"
+    duplicate_warnings: int = 0  # create_agent calls held back by the duplicate check
     steps: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -51,13 +55,16 @@ async def run_decision(
     *,
     model: str,
     api_key: Optional[str],
-    max_steps: int = 4,
+    max_steps: int = 5,
 ) -> Decision:
     decision = Decision()
     system = build_system_prompt()
     tools = get_tool_schemas()
+    names_by_id = {f"a{i}": name for i, name in enumerate(roster, start=1)}
+    records = [AgentRecord(id=agent_id, name=name, summary="", status="active", created_at="",
+                           last_used_at="", run_count=0) for agent_id, name in names_by_id.items()]
     messages: List[Dict[str, Any]] = prepare_message_with_history(
-        case.message, render_history(case.history), message_type="user", agents=list(roster)
+        case.message, render_history(case.history), message_type="user", agents=list(names_by_id.items())
     )
 
     for _ in range(max_steps):
@@ -76,28 +83,53 @@ async def run_decision(
         decision.raw_responses.append(message)
         tool_calls = message.get("tool_calls") or []
 
-        parsed = _parse_calls(tool_calls)
-        routes = [args["agent_name"] for name, args in parsed
-                  if name == "send_message_to_agent" and args is not None and args.get("agent_name")]
+        outcomes = [_simulate_tool(name, args, names_by_id, records, decision) for name, args in _parse_calls(tool_calls)]
+        routes = [route for _, route in outcomes if route]
         if routes:
             decision.routes = routes
             return decision
         if not tool_calls:
             return decision
 
-        # Like the app: answer every call (errors included) and let the model continue.
+        # Like the app: answer every call (errors and duplicate warnings included) and let the model continue.
         messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
-        for call, (name, args) in zip(tool_calls, parsed):
-            if args is None:
-                result = {"error": "invalid json"}
-            elif name == "send_message_to_agent":
-                result = {"error": "Missing required arguments: agent_name"}
-            else:
-                result = _FAKE_TOOL_RESULTS.get(name, {"error": f"Unknown tool: {name}"})
-            messages.append({"role": "tool", "tool_call_id": call.get("id") or name, "content": json.dumps(result)})
+        for call, (result, _) in zip(tool_calls, outcomes):
+            messages.append({"role": "tool", "tool_call_id": call.get("id") or "call", "content": json.dumps(result)})
 
     decision.hit_step_limit = True
     return decision
+
+
+# What the app would answer to one tool call, and where it routed (None if it didn't route).
+# Mirrors server/agents/interaction_agent/tools.py, including the real duplicate check.
+def _simulate_tool(
+    name: str,
+    args: Optional[Dict[str, Any]],
+    names_by_id: Dict[str, str],
+    records: Sequence[AgentRecord],
+    decision: Decision,
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    if args is None:
+        return {"error": "invalid json"}, None
+    if name == "send_message_to_agent":
+        agent_id = str(args.get("agent_id") or "").strip().lower()
+        if agent_id in names_by_id:
+            return {"status": "submitted", "agent_id": agent_id, "agent_name": names_by_id[agent_id],
+                    "new_agent_created": False}, names_by_id[agent_id]
+        return {"error": f"No agent with id {agent_id!r}. Use an id from <active_agents>, "
+                         "or create_agent for a new task."}, None
+    if name == "create_agent":
+        new_name = str(args.get("name") or "").strip()
+        if not new_name:
+            return {"error": "Missing required arguments: name"}, None
+        if not args.get("confirm_new"):
+            candidates = find_possible_duplicates(new_name, records)
+            if candidates:
+                decision.duplicate_warnings += 1
+                return duplicate_warning(candidates), None
+        return {"status": "submitted", "agent_id": "new", "agent_name": new_name,
+                "new_agent_created": True}, NEW_AGENT_PREFIX + new_name
+    return _FAKE_TOOL_RESULTS.get(name, {"error": f"Unknown tool: {name}"}), None
 
 
 # Parse tool calls into (name, args); args is None when the model sent unparseable arguments

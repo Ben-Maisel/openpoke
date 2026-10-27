@@ -1,5 +1,7 @@
 """Tests for the routing eval itself: an evaluator with a bug produces confident wrong numbers."""
 
+import json
+
 import pytest
 
 from fakes import calls, reply
@@ -16,8 +18,13 @@ NEW = Expectation("new")
 NONE = Expectation("none")
 
 
-def delegate(*names):
-    return calls(*[("send_message_to_agent", {"agent_name": n, "instructions": "do it"}) for n in names])
+# The harness gives the roster ids in order: a1 = "Lunch with Alice", a2 = "Vercel Job Offer", a3 = "Dentist Reminder".
+def send(*agent_ids):
+    return calls(*[("send_message_to_agent", {"agent_id": a, "instructions": "do it"}) for a in agent_ids])
+
+
+def create(name, **extra):
+    return calls(("create_agent", {"name": name, "instructions": "do it", **extra}))
 
 
 def case(message="did alice reply?", expect=LUNCH, history=()):
@@ -119,25 +126,26 @@ def test_history_renders_exactly_like_the_real_conversation_log(tmp_path, monkey
 
 
 async def test_prompt_is_built_by_the_app_with_the_case_roster(fake_llm, clean_state):
-    fake_llm.for_interaction(delegate("Lunch with Alice"))
+    fake_llm.for_interaction(send("a1"))
     history = [("user_message", "invite alice to lunch"), ("poke_reply", "on it")]
     await run_decision(case(history=history), ROSTER, model="m", api_key="k")
 
     call = fake_llm.calls[0]
-    assert call.prompt.count("<agent name=") == len(ROSTER)  # the case roster, not the (empty) live one
+    assert call.prompt.count("<agent id=") == len(ROSTER)  # the case roster, not the (empty) live one
+    assert '<agent id="a1" name="Lunch with Alice" />' in call.prompt
     assert "invite alice to lunch" in call.prompt.split("</conversation_history>")[0]
     assert call.prompt.rstrip().endswith("<new_user_message>\ndid alice reply?\n</new_user_message>")
     assert "send_message_to_agent" in call.tool_names and call.system.startswith("You are OpenPoke")
 
 
 async def test_routes_are_read_from_the_first_delegation(fake_llm):
-    fake_llm.for_interaction(delegate("Lunch with Alice"))
+    fake_llm.for_interaction(send("a1"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
     assert (decision.routes, decision.steps) == (["Lunch with Alice"], 1)
 
 
 async def test_acknowledging_first_then_delegating_is_followed(fake_llm):
-    fake_llm.for_interaction(calls(("send_message_to_user", {"message": "on it"})), delegate("Lunch with Alice"))
+    fake_llm.for_interaction(calls(("send_message_to_user", {"message": "on it"})), send("a1"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
     assert (decision.routes, decision.steps) == (["Lunch with Alice"], 2)
     assert '"status": "delivered"' in fake_llm.calls[1].messages[-1]["content"]
@@ -145,16 +153,17 @@ async def test_acknowledging_first_then_delegating_is_followed(fake_llm):
 
 async def test_raw_model_messages_are_kept_verbatim(fake_llm):
     first = calls(("send_message_to_user", {"message": "on it"}), text="thinking out loud")
-    fake_llm.for_interaction(first, delegate("Lunch with Alice"))
+    fake_llm.for_interaction(first, send("a1"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
     assert len(decision.raw_responses) == 2
     assert decision.raw_responses[0] == first["choices"][0]["message"]
 
 
 async def test_parallel_delegation_records_every_route(fake_llm):
-    fake_llm.for_interaction(delegate("Lunch with Alice", "Flight to Denver"))
+    fake_llm.for_interaction(calls(("send_message_to_agent", {"agent_id": "a1", "instructions": "x"}),
+                                   ("create_agent", {"name": "Flight to Denver", "instructions": "y"})))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
-    assert decision.routes == ["Lunch with Alice", "Flight to Denver"]
+    assert decision.routes == ["Lunch with Alice", "new:Flight to Denver"]
 
 
 async def test_plain_reply_means_no_delegation(fake_llm):
@@ -178,7 +187,7 @@ async def test_api_failure_is_reported_not_scored(fake_llm):
 async def test_usage_is_summed_across_steps(fake_llm):
     first = calls(("send_message_to_user", {"message": "on it"}))
     first["usage"] = {"prompt_tokens": 1000, "completion_tokens": 10, "cost": 0.0001}
-    second = delegate("Lunch with Alice")
+    second = send("a1")
     second["usage"] = {"prompt_tokens": 1100, "completion_tokens": 20, "cost": 0.00012}
     fake_llm.for_interaction(first, second)
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
@@ -187,14 +196,45 @@ async def test_usage_is_summed_across_steps(fake_llm):
 
 
 async def test_malformed_delegation_gets_an_error_and_the_model_can_retry(fake_llm):
-    fake_llm.for_interaction(calls(("send_message_to_agent", "{not json")), delegate("Lunch with Alice"))
+    fake_llm.for_interaction(calls(("send_message_to_agent", "{not json")), send("a1"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
     assert decision.routes == ["Lunch with Alice"]
     assert '"error": "invalid json"' in fake_llm.calls[1].messages[-1]["content"]
 
 
-async def test_delegation_without_an_agent_name_is_not_a_route(fake_llm):
+async def test_delegation_without_an_agent_id_is_not_a_route(fake_llm):
     fake_llm.for_interaction(calls(("send_message_to_agent", {"instructions": "x"})), reply("gave up"))
     decision = await run_decision(case(), ROSTER, model="m", api_key="k")
     assert decision.routes == []
-    assert "Missing required arguments" in fake_llm.calls[1].messages[-1]["content"]
+    assert "No agent with id" in fake_llm.calls[1].messages[-1]["content"]
+
+
+async def test_unknown_id_gets_the_apps_error_and_the_model_can_retry(fake_llm):
+    fake_llm.for_interaction(send("a99"), send("a1"))
+    decision = await run_decision(case(), ROSTER, model="m", api_key="k")
+    assert decision.routes == ["Lunch with Alice"]
+    assert "No agent with id 'a99'" in fake_llm.calls[1].messages[-1]["content"]
+
+
+async def test_genuinely_new_agent_is_routed_as_new(fake_llm):
+    fake_llm.for_interaction(create("Denver Flights"))
+    decision = await run_decision(case("find flights to denver", NEW), ROSTER, model="m", api_key="k")
+    assert (decision.routes, decision.duplicate_warnings) == (["new:Denver Flights"], 0)
+    assert classify(NEW, decision.routes, ROSTER) is Outcome.CORRECT
+
+
+async def test_likely_duplicate_gets_the_apps_warning_and_the_model_can_reuse(fake_llm):
+    fake_llm.for_interaction(create("Alice Lunch"), send("a1"))
+    decision = await run_decision(case(), ROSTER, model="m", api_key="k")
+    assert (decision.routes, decision.duplicate_warnings) == (["Lunch with Alice"], 1)
+    warning = json.loads(fake_llm.calls[1].messages[-1]["content"])
+    assert warning["status"] == "possible_duplicate"
+    assert warning["similar_agents"][0] == {"agent_id": "a1", "name": "Lunch with Alice", "summary": ""}
+
+
+async def test_confirmed_duplicate_still_counts_as_a_duplicate(fake_llm):
+    fake_llm.for_interaction(create("Lunch with Alice", confirm_new=True))
+    decision = await run_decision(case(), ROSTER, model="m", api_key="k")
+    assert decision.routes == ["new:Lunch with Alice"]
+    assert classify(LUNCH, decision.routes, ROSTER) is Outcome.DUPLICATE
+    assert is_near_miss(decision.routes[0], ROSTER) is True  # a created agent named like an existing one

@@ -38,7 +38,7 @@ class ExecutionAgentRuntime:
         record = self._registry.get(agent_id)
         if record is None:
             raise ValueError(f"Unknown execution agent: {agent_id}")
-        self.agent = ExecutionAgent(record.id, record.name)
+        self.agent = ExecutionAgent(record.id, record.name, record.summary)
         self.api_key = settings.openrouter_api_key
         self.model = settings.execution_agent_model
         self.tool_registry = get_tool_registry(agent_id=record.id)

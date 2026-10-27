@@ -11,6 +11,9 @@ from server.services.execution.log_store import _slugify
 
 from .cases import Expectation
 
+# Routes to agents the model created carry this prefix, so they can never equal an existing name
+NEW_AGENT_PREFIX = "new:"
+
 
 class Outcome(str, Enum):
     CORRECT = "correct"
@@ -48,7 +51,8 @@ def classify(expect: Expectation, routes: Sequence[str], roster: Sequence[str], 
 def is_near_miss(route: str, roster: Sequence[str]) -> bool:
     if route in roster:
         return False
-    return any(_slugify(route) == _slugify(name) for name in roster)
+    name = route[len(NEW_AGENT_PREFIX):] if route.startswith(NEW_AGENT_PREFIX) else route
+    return any(_slugify(name) == _slugify(existing) for existing in roster)
 
 
 # 95% Wilson score interval for a proportion; well-behaved for small n and rates near 0 or 1

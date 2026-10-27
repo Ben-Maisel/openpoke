@@ -181,6 +181,7 @@ async def run_eval(
             "outcome": outcome.value, "routes": decision.routes,
             "near_miss": any(is_near_miss(r, roster) for r in decision.routes),
             "steps": decision.steps, "hit_step_limit": decision.hit_step_limit,
+            "duplicate_warnings": decision.duplicate_warnings,
             "prompt_tokens": decision.prompt_tokens, "completion_tokens": decision.completion_tokens,
             "cost": decision.cost, "error": decision.error, "duration_s": round(duration, 2),
             "logged_at": _now(), "raw_responses": decision.raw_responses,

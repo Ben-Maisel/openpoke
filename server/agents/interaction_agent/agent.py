@@ -2,7 +2,7 @@
 
 from html import escape
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from ...services.execution import get_agent_registry
 
@@ -21,12 +21,12 @@ def prepare_message_with_history(
     latest_text: str,
     transcript: str,
     message_type: str = "user",
-    agents: Optional[Sequence[str]] = None,
+    agents: Optional[Sequence[Tuple[str, str]]] = None,
 ) -> List[Dict[str, str]]:
     """Compose a message that bundles history, roster, and the latest turn.
 
-    `agents` overrides the stored roster (used by the routing eval); by default
-    the live roster is read.
+    `agents` overrides the registry with (id, name) pairs (used by the routing eval);
+    by default the live registry is read.
     """
     sections: List[str] = []
 
@@ -47,19 +47,19 @@ def _render_conversation_history(transcript: str) -> str:
 
 
 # Format currently active execution agents into XML tags for LLM awareness
-def _render_active_agents(agents: Optional[Sequence[str]] = None) -> str:
+def _render_active_agents(agents: Optional[Sequence[Tuple[str, str]]] = None) -> str:
     if agents is None:
         # Creation order, as the old roster listed them; P2 replaces this with a shortlist.
         records = sorted(get_agent_registry().list_agents(), key=lambda record: int(record.id[1:]))
-        agents = [record.name for record in records]
+        agents = [(record.id, record.name) for record in records]
 
     if not agents:
         return "None"
 
     rendered: List[str] = []
-    for agent_name in agents:
+    for agent_id, agent_name in agents:
         name = escape(agent_name or "agent", quote=True)
-        rendered.append(f'<agent name="{name}" />')
+        rendered.append(f'<agent id="{escape(agent_id, quote=True)}" name="{name}" />')
 
     return "\n".join(rendered)
 

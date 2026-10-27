@@ -183,7 +183,8 @@ class ExecutionBatchManager:
         for result in results:
             status = "SUCCESS" if result.success else "FAILED"
             response_text = (result.response or "(no response provided)").strip()
-            entries.append(f"[{status}] {result.agent_name}: {response_text}")
+            # The id rides along in the conversation history, so follow-ups can route straight back
+            entries.append(f"[{status}] {result.agent_name} ({result.agent_id}): {response_text}")
         return "\n".join(entries)
 
     # Forward combined execution results to interaction agent for user response generation
