@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Set
 from .agent import build_system_prompt, prepare_message_with_history
 from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from ...config import get_settings
-from ...services.conversation import get_conversation_log, get_working_memory_log
+from ...services.conversation import get_conversation_events, get_conversation_log, get_working_memory_log
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
 
@@ -66,7 +66,14 @@ class InteractionAgentRuntime:
     # Main entry point for processing user messages through the LLM interaction loop
     async def execute(self, user_message: str) -> InteractionResult:
         """Handle a user-authored message."""
+        events = get_conversation_events()
+        events.work_started()  # the browser shows the assistant as working until this turn ends (P18)
+        try:
+            return await self._handle_user_message(user_message)
+        finally:
+            events.work_finished()
 
+    async def _handle_user_message(self, user_message: str) -> InteractionResult:
         try:
             transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_user_message(user_message)
@@ -102,6 +109,14 @@ class InteractionAgentRuntime:
     # Handle incoming messages from execution agents and generate appropriate responses
     async def handle_agent_message(self, agent_message: str) -> InteractionResult:
         """Process a status update emitted by an execution agent."""
+        events = get_conversation_events()
+        events.work_started()
+        try:
+            return await self._handle_agent_message(agent_message)
+        finally:
+            events.work_finished()
+
+    async def _handle_agent_message(self, agent_message: str) -> InteractionResult:
 
         try:
             transcript_before = self._load_conversation_transcript()

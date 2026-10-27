@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from .runtime import ExecutionAgentRuntime, ExecutionResult
 from ...config import get_settings
 from ...logging_config import logger
+from ...services.conversation import get_conversation_events
 from ...services.execution import get_agent_registry, get_execution_agent_logs
 
 
@@ -71,6 +72,8 @@ class ExecutionBatchManager:
             request_id = str(uuid.uuid4())
 
         batch_id = await self._register_pending_execution(agent_id, instructions, request_id) if report else None
+        if report:  # work the user asked for keeps the assistant 'working' in the browser (P18)
+            get_conversation_events().work_started()
 
         try:
             # Runs of the same agent wait their turn, so each one starts from the previous run's memory.
@@ -105,6 +108,8 @@ class ExecutionBatchManager:
             )
         finally:
             self._pending.pop(request_id, None)
+            if report:
+                get_conversation_events().work_finished()
 
         if batch_id is not None:
             await self._complete_execution(batch_id, result, agent_id)

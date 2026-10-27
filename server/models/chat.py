@@ -11,6 +11,7 @@ class ChatMessage(BaseModel):
     role: str = Field(..., min_length=1)
     content: str = Field(...)
     timestamp: Optional[str] = Field(default=None)
+    seq: Optional[int] = Field(default=None)  # position in the conversation log, for resuming a stream (P18)
 
     @model_validator(mode="before")
     @classmethod

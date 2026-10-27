@@ -11,6 +11,7 @@ from ...logging_config import logger
 from ...models import ChatMessage
 from ...utils.log_encoding import decode_payload as _decode_payload, encode_payload as _encode_payload
 from ...utils.timezones import now_in_user_timezone
+from .events import get_conversation_events
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
@@ -39,6 +40,9 @@ def _resolve_working_memory_log() -> "WorkingMemoryLog":
 
 _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 
+# Log entries the user sees, and the chat role each is shown with
+_CHAT_ROLES = {"user_message": "user", "poke_reply": "assistant", "draft": "draft"}
+
 
 class ConversationLog:
     """Append-only conversation log persisted to disk for the interaction agent."""
@@ -47,6 +51,7 @@ class ConversationLog:
         self._path = path
         self._formatter = formatter
         self._lock = threading.Lock()
+        self._count: Optional[int] = None  # entries in the file; an entry's sequence number is its position
         self._ensure_directory()
         self._working_memory_log = _resolve_working_memory_log()
 
@@ -60,6 +65,7 @@ class ConversationLog:
         timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         entry = self._formatter(tag, timestamp, str(payload))
         with self._lock:
+            seq = self._count_locked() + 1
             try:
                 with self._path.open("a", encoding="utf-8") as handle:
                     handle.write(entry)
@@ -69,8 +75,28 @@ class ConversationLog:
                     extra={"error": str(exc), "tag": tag, "path": str(self._path)},
                 )
                 raise
+            self._count = seq
+        if tag in _CHAT_ROLES:  # push it to open browsers (P18)
+            get_conversation_events().publish(
+                {"type": "message", "seq": seq, "role": _CHAT_ROLES[tag], "content": str(payload), "timestamp": timestamp}
+            )
         self._notify_summarization()
         return timestamp
+
+    def entry_count(self) -> int:
+        """The sequence number of the latest entry (0 when the log is empty)."""
+        with self._lock:
+            return self._count_locked()
+
+    def _count_locked(self) -> int:
+        """How many entries the file holds; read once, then kept up to date. The caller holds the lock."""
+        if self._count is None:
+            try:
+                lines = self._path.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                lines = []
+            self._count = sum(1 for line in lines if self._parse_line(line) is not None)
+        return self._count
 
     def _parse_line(self, line: str) -> Optional[Tuple[str, str, str]]:
         stripped = line.strip()
@@ -168,27 +194,15 @@ class ConversationLog:
                 extra={"error": str(exc)},
             )
 
-    def to_chat_messages(self) -> List[ChatMessage]:
+    def to_chat_messages(self, after: int = 0) -> List[ChatMessage]:
+        """What the user sees, each with its sequence number; `after` skips messages the client already has."""
         messages: List[ChatMessage] = []
-        for tag, timestamp, payload in self.iter_entries():
-            normalized_timestamp = timestamp or None
-            if tag == "user_message":
+        for seq, (tag, timestamp, payload) in enumerate(self.iter_entries(), start=1):
+            # Agent reports and wait markers are orchestration metadata and never surface to the user
+            if seq > after and tag in _CHAT_ROLES:
                 messages.append(
-                    ChatMessage(role="user", content=payload, timestamp=normalized_timestamp)
+                    ChatMessage(role=_CHAT_ROLES[tag], content=payload, timestamp=timestamp or None, seq=seq)
                 )
-            elif tag == "poke_reply":
-                messages.append(
-                    ChatMessage(
-                        role="assistant", content=payload, timestamp=normalized_timestamp
-                    )
-                )
-            elif tag == "draft":
-                messages.append(
-                    ChatMessage(role="draft", content=payload, timestamp=normalized_timestamp)
-                )
-            elif tag == "wait":
-                # Wait markers are orchestration metadata and must not surface to the user
-                continue
         return messages
 
     def clear(self) -> None:
@@ -202,6 +216,8 @@ class ConversationLog:
                 )
             finally:
                 self._ensure_directory()
+                self._count = 0
+        get_conversation_events().publish({"type": "cleared"})
         try:
             self._working_memory_log.clear()
         except Exception as exc:  # pragma: no cover - defensive

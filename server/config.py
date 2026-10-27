@@ -111,6 +111,7 @@ class Settings(BaseModel):
     digest_interval_minutes: int = 60  # held updates go out together once the oldest has waited this long
     quiet_hours: str = "22:00-07:00"  # user's local time; the digest waits until they end ("" turns them off)
     notification_check_interval_seconds: float = 60.0  # how often the digest is checked
+    event_stream_heartbeat_seconds: float = 15.0  # keep-alive on the browser's live stream (P18)
 
     # --- Routing: which agents the interaction agent sees (P2, P4) ------------------------------
     working_set_recent: int = 5  # most recently used agents always shown
