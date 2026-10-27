@@ -17,6 +17,7 @@ LLM_CALL_SITES = [
     "server.agents.execution_agent.tasks.search_email.tool",
     "server.services.conversation.summarization.summarizer",
     "server.services.gmail.importance_classifier",
+    "evals.routing.harness",
 ]
 
 

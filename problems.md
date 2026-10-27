@@ -194,7 +194,17 @@ Each step builds on the previous ones. Related problems that touch the same code
       - Batching tests cover combined reports, an isolated failure, and a timeout.
       - The fake LLM gained `Gated` responses, which let tests hold an agent "mid-task" without sleeping, and `is_agent(name)` for scripting one specific agent.
       - Confirms P9, P10 and P11 as strict expected failures.
-  - [ ] Baseline routing eval (before P1)
+  - Baseline routing eval (before P1):
+    - [x] **5a: harness and scoring.**
+      - `evals/routing/`:
+        - `cases.py`: the case and expectation types
+        - `harness.py`: runs one decision on the real model, using the app's own prompt builder; acknowledgement-then-delegate and malformed calls are handled the way the app handles them
+        - `scoring.py`: deterministic outcome classification across 6 outcomes plus API errors, near-miss detection, Wilson 95% intervals, and per-group summaries
+      - `prepare_message_with_history` gained an optional `agents` argument so the eval can supply a roster. With no argument, behavior is unchanged.
+      - The evaluator is itself tested in CI: `tests/test_routing_eval.py`, 32 tests, including a contract test that the history format matches the real conversation log.
+      - Live check: 3 cases, all correct, $0.002.
+    - [ ] 5b: dataset (world, ~40 labelled cases, seeded distractor rosters)
+    - [ ] 5c: runner, report, and the baseline run
 - **Solution:** —
 
 ### P14: Placeholder prompt
