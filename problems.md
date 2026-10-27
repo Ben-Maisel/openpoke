@@ -177,7 +177,13 @@ Each step builds on the previous ones. Related problems that touch the same code
       - `conftest.py` adds the `fake_llm` and `clean_state` fixtures.
       - `tests/test_interaction_agent.py`, 29 tests: replies, the prompt's contents, delegation and reuse, malformed tool calls, the iteration limit, LLM outages, drafts, and the chat HTTP API end to end.
       - Confirms P2 (full roster in every prompt), P12 (failures are silent), and P16 (drafts not marked as drafts).
-    - [ ] 4b: execution agent loop, Gmail tools against a fake inbox, trigger tools
+    - [x] **4b: execution agent, its tools, and the email search task.**
+      - `FakeGmail` in `tests/fakes.py` is an in-memory inbox that replaces all 4 Composio call sites and records every action and sent email.
+      - New test files, 49 tests in total:
+        - `tests/test_execution_agent.py`: the loop, memory loading, tool errors, the iteration limit, outages
+        - `tests/test_execution_tools.py`: schema/registry consistency, Gmail tool→action mapping, trigger tools and ownership
+        - `tests/test_email_search_task.py`: the search mini-agent, alone and called from an execution agent
+      - Confirms P6 (truncated memory), P17 (phantom `gmail-execution-agent` log) and P20 (an unseen draft can be sent) as strict expected failures.
     - [ ] 4c: batch manager and full round trip; P9 and P10 concurrency
   - [ ] Baseline routing eval (before P1)
 - **Solution:** —

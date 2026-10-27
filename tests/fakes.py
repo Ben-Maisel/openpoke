@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 from collections import deque
@@ -70,6 +71,10 @@ def is_execution_agent(call: LLMCall) -> bool:
     return "gmail_create_draft" in call.tool_names
 
 
+def is_search_task(call: LLMCall) -> bool:
+    return "return_search_results" in call.tool_names
+
+
 @dataclass
 class ScriptedLLM:
     """Replaces the OpenRouter call. Tests queue responses; every request is recorded.
@@ -92,6 +97,9 @@ class ScriptedLLM:
     def for_execution(self, *responses: Any) -> "ScriptedLLM":
         return self.script(*responses, when=is_execution_agent)
 
+    def for_search(self, *responses: Any) -> "ScriptedLLM":
+        return self.script(*responses, when=is_search_task)
+
     def calls_to(self, matcher: Matcher) -> List[LLMCall]:
         return [call for call in self.calls if matcher(call)]
 
@@ -106,3 +114,102 @@ class ScriptedLLM:
                     raise response
                 return response
         raise AssertionError(f"ScriptedLLM: no scripted response left for this call (tools={call.tool_names})")
+
+
+# --- Fake Gmail -------------------------------------------------------------
+
+# Every module that imports the Composio Gmail helpers by name; the fake replaces each one.
+GMAIL_CALL_SITES = [
+    "server.agents.execution_agent.tools.gmail",
+    "server.agents.execution_agent.tasks.search_email.tool",
+    "server.agents.execution_agent.tasks.search_email.gmail_internal",
+    "server.services.gmail.importance_watcher",
+]
+
+
+def _b64(text: str) -> str:
+    return base64.urlsafe_b64encode(text.encode("utf-8")).decode("ascii")
+
+
+@dataclass
+class FakeGmail:
+    """In-memory stand-in for the Composio Gmail actions.
+
+    Response shapes approximate Composio's (`{"successful": ..., "data": ...}`);
+    the exact live shapes still need confirming against a real account (see P25).
+    """
+
+    connected: bool = True
+    fail_with: Optional[Exception] = None
+    actions: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
+    inbox: List[Dict[str, Any]] = field(default_factory=list)
+    drafts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    sent: List[Dict[str, Any]] = field(default_factory=list)
+
+    def add_email(self, message_id: str, *, subject: str, sender: str, body: str,
+                  thread_id: Optional[str] = None, timestamp: str = "2026-10-26T12:00:00Z") -> Dict[str, Any]:
+        message = {
+            "messageId": message_id,
+            "threadId": thread_id or f"t-{message_id}",
+            "messageTimestamp": timestamp,
+            "subject": subject,
+            "sender": sender,
+            "to": "me@example.com",
+            "labelIds": ["INBOX"],
+            "messageText": body,
+            "payload": {"mimeType": "text/plain", "body": {"data": _b64(body)}},
+            "attachmentList": [],
+        }
+        self.inbox.append(message)
+        return message
+
+    def action_names(self) -> List[str]:
+        return [name for name, _ in self.actions]
+
+    # The two functions the server imports from server.services.gmail:
+
+    def get_active_gmail_user_id(self) -> Optional[str]:
+        return "test-user" if self.connected else None
+
+    def execute_gmail_tool(self, tool_name: str, composio_user_id: str, *, arguments=None) -> Dict[str, Any]:
+        arguments = dict(arguments or {})
+        self.actions.append((tool_name, arguments))
+        if self.fail_with is not None:
+            raise self.fail_with
+        handler = getattr(self, f"_handle_{tool_name.lower()}", None)
+        return handler(arguments) if handler else {"successful": True, "data": {}}
+
+    def _handle_gmail_create_email_draft(self, args):
+        draft_id = f"r-{len(self.drafts) + 1}"
+        self.drafts[draft_id] = {"id": draft_id, **args}
+        return {"successful": True, "data": {"id": draft_id}}
+
+    def _handle_gmail_send_draft(self, args):
+        draft = self.drafts.pop(args.get("draft_id"), None)
+        if draft is None:
+            return {"successful": False, "error": f"Draft {args.get('draft_id')} not found"}
+        self.sent.append({"kind": "draft", **draft})
+        return {"successful": True, "data": {"id": f"sent-{draft['id']}"}}
+
+    def _handle_gmail_reply_to_thread(self, args):
+        self.sent.append({"kind": "reply", **args})
+        return {"successful": True, "data": {"id": f"sent-{len(self.sent)}"}}
+
+    def _handle_gmail_forward_message(self, args):
+        self.sent.append({"kind": "forward", **args})
+        return {"successful": True, "data": {"id": f"sent-{len(self.sent)}"}}
+
+    def _handle_gmail_delete_draft(self, args):
+        self.drafts.pop(args.get("draft_id"), None)
+        return {"successful": True, "data": {}}
+
+    def _handle_gmail_list_drafts(self, args):
+        return {"successful": True, "data": {"drafts": list(self.drafts.values())}}
+
+    def _handle_gmail_fetch_emails(self, args):
+        terms = [t.split(":", 1)[-1].lower() for t in (args.get("query") or "").split() if ":" not in t or t.startswith("from:")]
+        def matches(message):
+            haystack = " ".join([message["subject"], message["sender"], message["messageText"]]).lower()
+            return all(term in haystack for term in terms)
+        found = [m for m in self.inbox if matches(m)][: args.get("max_results") or 10]
+        return {"successful": True, "data": {"messages": copy.deepcopy(found)}}

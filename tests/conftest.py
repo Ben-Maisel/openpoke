@@ -25,7 +25,7 @@ import importlib  # noqa: E402  (must come after the environment setup above)
 
 import pytest  # noqa: E402
 
-from fakes import LLM_CALL_SITES, ScriptedLLM  # noqa: E402
+from fakes import GMAIL_CALL_SITES, LLM_CALL_SITES, FakeGmail, ScriptedLLM  # noqa: E402
 
 
 @pytest.fixture
@@ -35,6 +35,17 @@ def fake_llm(monkeypatch):
     for module_path in LLM_CALL_SITES:
         monkeypatch.setattr(importlib.import_module(module_path), "request_chat_completion", llm)
     return llm
+
+
+@pytest.fixture
+def fake_gmail(monkeypatch):
+    """Route every Composio Gmail call in the server to an in-memory FakeGmail."""
+    gmail = FakeGmail()
+    for module_path in GMAIL_CALL_SITES:
+        module = importlib.import_module(module_path)
+        monkeypatch.setattr(module, "execute_gmail_tool", gmail.execute_gmail_tool)
+        monkeypatch.setattr(module, "get_active_gmail_user_id", gmail.get_active_gmail_user_id)
+    return gmail
 
 
 @pytest.fixture
