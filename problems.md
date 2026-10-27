@@ -42,7 +42,7 @@ Each step builds on the previous ones. Related problems that touch the same code
 | ID | Problem | Area | Severity | Status |
 |---|---|---|---|---|
 | P1 | Roster stores bare names only, with no description or metadata | A | High | 🟢 Solved |
-| P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟡 In progress |
+| P2 | Entire roster is injected into every interaction-agent prompt | A | High | 🟢 Solved |
 | P3 | Agents are never retired, so the roster grows forever | A | High | 🔴 Open |
 | P4 | Routing relies on the LLM retyping an exact name; near-misses silently create new agents | A | High | 🟢 Solved |
 | P5 | Execution agent memory (full log) is loaded into every prompt with no limit | B | High | 🔴 Open |
@@ -150,8 +150,12 @@ Each step builds on the previous ones. Related problems that touch the same code
       - **Unchanged:** roster names are byte-identical to before, so the baselines stay comparable.
       - **Runner:** uses cards by default, records `cards_sha` in the run identity, and `--no-cards` reproduces the pre-P2 setup. Reports state whether cards were used.
       - **Tests:** 91 new checks covering coverage, fairness, decoys differing from the right card, and no parroting.
-    - [ ] Rerun clean and messy (`p2`, `p2-messy`) after review
-- **Solution:** —
+    - [x] **Rerun:** `evals/results/p2` and `evals/results/p2-messy` (Haiku 5.5, 320 decisions, about $0.40).
+      - **Prompt size stops growing:** about 7k tokens at every roster size, against 14.4k (baseline) and 17.6k (P4) at 500 agents.
+      - **Messy roster:** messaging *only* the right agent rose from 42–46% (baseline) and 33% (P4) to **83–88%**. Agents messaged per decision fell from about 1.9 to **1.0**, so the fan-out is gone. Overall accuracy is 88–92%, against 62–68% at baseline.
+      - **Clean roster:** strict accuracy is 85–90%, against 98–100%. **All 18 clean misses are the interaction agent answering directly from the right agent's card** (e.g. "when is my dentist appointment?" → "Tuesday, Nov 3 at 2pm with Dr. Lee") instead of delegating. These count as misses under labels written before cards existed. **There were no routing errors on the clean roster**, and 3 of 160 on the messy roster (1 wrong agent, 2 wrongly reused).
+      - **Kept as is, deliberately:** answering settled facts from the card skips a whole agent run. In these runs the model still delegated questions whose answers can change (e.g. "did the landlord reply?"). Strict numbers are reported unchanged rather than relabelled after seeing results. Card answers were spot-checked by hand at 50 agents, and all matched their cards.
+- **Solution:** the interaction agent sees a bounded working set (the 5 most recently used agents plus the 5 best matches, each with its card) and a `search_agents` tool, instead of the whole roster. Prompt size no longer grows with the number of agents, and cards let it pick the right agent among look-alikes.
 
 ### P3: Agents are never retired
 - **Where:** [server/services/execution/roster.py](server/services/execution/roster.py)
