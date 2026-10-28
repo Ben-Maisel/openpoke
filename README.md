@@ -52,12 +52,18 @@ pip install -r server/requirements-dev.txt
 npm install --prefix web
 ```
 
-Then, in two terminals:
+Then, in two terminals. Terminal 1 keeps the app's data in a scratch folder, so each try starts empty:
 
 ```bash
-python -m server.server            # terminal 1: wait for "Uvicorn running on http://0.0.0.0:8001"
-npm run dev --prefix web           # terminal 2
+# terminal 1
+export OPENPOKE_DATA_DIR=/tmp/openpoke-demo                 # Windows: $env:OPENPOKE_DATA_DIR = "$env:TEMP\openpoke-demo"
+python -m server.server                                     # wait for "Uvicorn running on http://0.0.0.0:8001"
+
+# terminal 2
+npm run dev --prefix web
 ```
+
+Skip the `export` line to keep data in `server/data/` instead.
 
 Open [http://localhost:3000](http://localhost:3000).
 
@@ -71,9 +77,7 @@ Send these in the chat and watch the server terminal:
 2. *"Actually make it 10am."* The same agent `a1` is reused, not a new one.
 3. Open a second tab: messages appear in both instantly.
 
-Then look in `server/data/execution_agents/`: `registry.db` holds each agent's ID, name, card and facts, and `a1.log` holds its full tool-call records.
-
-To start with empty data, set `OPENPOKE_DATA_DIR` to a scratch folder before starting the server.
+Then look in the data folder's `execution_agents/` (`/tmp/openpoke-demo/execution_agents/` with the scratch folder above): `registry.db` holds each agent's ID, name, card and facts, and `a1.log` holds its full tool-call records.
 
 ## 4. Run the tests
 
